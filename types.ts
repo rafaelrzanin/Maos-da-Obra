@@ -103,7 +103,7 @@ export interface WorkPhoto {
   type: 'BEFORE' | 'AFTER' | 'PROGRESS';
 }
 
-// --- TIPOS PARA ARQUIVOS ---
+// --- NOVOS TIPOS PARA ARQUIVOS ---
 export enum FileCategory {
   ARCHITECTURAL = 'Arquitetônico',
   STRUCTURAL = 'Estrutural',
@@ -132,48 +132,4 @@ export interface Notification {
   date: string;
   read: boolean;
   type: 'INFO' | 'WARNING' | 'SUCCESS' | 'ERROR';
-}
-
-// --- TIPOS PARA EQUIPE E FORNECEDORES ---
-export enum CollaboratorRole {
-  PEDREIRO = 'Pedreiro',
-  SERVENTE = 'Servente',
-  ELETRICISTA = 'Eletricista',
-  ENCANADOR = 'Encanador',
-  PINTOR = 'Pintor',
-  ARQUITETO = 'Arquiteto',
-  ENGENHEIRO = 'Engenheiro',
-  MESTRE = 'Mestre de Obras',
-  OUTRO = 'Outro'
-}
-
-export interface Collaborator {
-  id: string;
-  workId: string;
-  name: string;
-  role: CollaboratorRole;
-  phone: string;
-  costType: 'DIARIA' | 'EMPREITA' | 'MENSAL';
-  costValue: number;
-  stepId?: string; // Vínculo com etapa
-}
-
-export enum SupplierCategory {
-  MATERIAL_BASICO = 'Material Básico',
-  ACABAMENTO = 'Acabamento',
-  ELETRICA = 'Elétrica',
-  HIDRAULICA = 'Hidráulica',
-  PINTURA = 'Pintura',
-  FERRAMENTAS = 'Ferramentas',
-  DIVERSOS = 'Diversos'
-}
-
-export interface Supplier {
-  id: string;
-  workId: string;
-  name: string;
-  category: SupplierCategory;
-  contactName: string;
-  phone: string;
-  email?: string;
 }
