@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db';
-import { Work, Step, Expense, Material, WorkPhoto, StepStatus, ExpenseCategory, WorkStatus, FileCategory, WorkFile } from '../types';
+import { Work, Step, Expense, Material, WorkPhoto, StepStatus, ExpenseCategory, WorkStatus, FileCategory, WorkFile, Collaborator, Supplier, CollaboratorRole, SupplierCategory } from '../types';
 import { Recharts } from '../components/RechartsWrapper';
 import { STANDARD_MATERIAL_CATALOG, STANDARD_PHASES, STANDARD_EXPENSE_CATALOG } from '../services/standards';
 
@@ -973,7 +973,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                                <p className="text-xs text-text-muted dark:text-slate-400 uppercase font-bold">Restante a Pagar</p>
                                <p className="text-lg font-bold text-warning-dark dark:text-yellow-400">
                                    R$ {(editData.amount - (editData.paidAmount || 0)).toFixed(2)}
-                               </p>
+                                </p>
                            </div>
                        )}
 
@@ -1054,1094 +1054,311 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
   );
 };
 
-const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workId, onUpdate }) => {
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [category, setCategory] = useState('');
-  const [subCategory, setSubCategory] = useState('');
-  const [materialName, setMaterialName] = useState('');
-  const [qty, setQty] = useState('');
-  const [unit, setUnit] = useState('un');
-  
-  // Steps for linking
-  const [steps, setSteps] = useState<Step[]>([]);
-  const [selectedStep, setSelectedStep] = useState('');
-  
-  // Custom Material
-  const [isCustom, setIsCustom] = useState(false);
+const TeamTab: React.FC<{ workId: string }> = ({ workId }) => {
+    const [subTab, setSubTab] = useState<'TEAM' | 'SUPPLIER'>('TEAM');
+    const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+    const [steps, setSteps] = useState<Step[]>([]); // To populate step dropdown
+    const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, id: string | null, type: 'TEAM'|'SUPPLIER'|null}>({isOpen: false, id: null, type: null});
 
-  // Import Batch State
-  const [importStepId, setImportStepId] = useState('');
+    // Forms
+    const [newCollab, setNewCollab] = useState({ name: '', role: '', phone: '', costType: 'DIARIA', costValue: '', stepId: '' });
+    const [newSupplier, setNewSupplier] = useState({ name: '', category: '', contactName: '', phone: '', email: '' });
 
-  // Edit State
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState({ name: '', planned: 0, purchased: 0, unit: '', cost: '', stepId: '' });
+    const loadData = () => {
+        setCollaborators(dbService.getCollaborators(workId));
+        setSuppliers(dbService.getSuppliers(workId));
+        setSteps(dbService.getSteps(workId));
+    }
 
-  // Confirmation Modal
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+    useEffect(loadData, [workId]);
 
-  const loadMaterials = () => setMaterials(dbService.getMaterials(workId));
-  
-  useEffect(() => {
-     loadMaterials();
-     setSteps(dbService.getSteps(workId));
-  }, [workId]);
-
-  const categories = Object.keys(STANDARD_MATERIAL_CATALOG);
-  const subCategories = category && !isCustom ? Object.keys(STANDARD_MATERIAL_CATALOG[category] || {}) : [];
-  const items = category && subCategory && !isCustom ? STANDARD_MATERIAL_CATALOG[category][subCategory] || [] : [];
-
-  const handleAdd = (e: React.FormEvent) => {
-    e.preventDefault();
-    dbService.addMaterial({
-      workId,
-      name: isCustom ? materialName : `${category} - ${materialName}`,
-      plannedQty: Number(qty),
-      purchasedQty: 0, // Inicia com 0 comprado
-      unit,
-      stepId: selectedStep || undefined
-    });
-    setMaterialName('');
-    setQty('');
-    setSelectedStep('');
-    loadMaterials();
-  };
-
-  // --- BATCH IMPORT LOGIC ---
-  const downloadTemplate = () => {
-    const csvContent = "data:text/csv;charset=utf-8,Nome do Material,Quantidade,Unidade\nCimento CP-II,50,sacos\nAreia Média,5,m3\nTijolo Baiano,1000,un";
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "modelo_importacao_materiais.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target?.result as string;
-      const lines = text.split('\n');
-      
-      let importedCount = 0;
-
-      lines.forEach((line, index) => {
-        // Skip header if present (simple check: if line contains "Nome do Material")
-        if (index === 0 && line.toLowerCase().includes('nome')) return;
+    const handleAddCollaborator = (e: React.FormEvent) => {
+        e.preventDefault();
         
-        const cleanLine = line.trim();
-        if (!cleanLine) return;
-
-        // Try comma then semicolon
-        let parts = cleanLine.split(',');
-        if (parts.length < 2) parts = cleanLine.split(';');
-
-        if (parts.length >= 2) {
-          const name = parts[0].trim().replace(/^"|"$/g, '');
-          const qty = Number(parts[1].trim());
-          const unit = parts[2] ? parts[2].trim().replace(/^"|"$/g, '') : 'un';
-
-          if (name && !isNaN(qty)) {
-            dbService.addMaterial({
-              workId,
-              name,
-              plannedQty: qty,
-              purchasedQty: 0,
-              unit,
-              stepId: importStepId || undefined
-            });
-            importedCount++;
-          }
-        }
-      });
-
-      if (importedCount > 0) {
-        alert(`${importedCount} materiais importados com sucesso!`);
-        loadMaterials();
-        onUpdate();
-      } else {
-        alert("Nenhum material válido encontrado na planilha.");
-      }
-      
-      // Reset input
-      e.target.value = '';
-    };
-    reader.readAsText(file);
-  };
-  // --------------------------
-
-  const handleDeleteClick = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmModal({
-        isOpen: true,
-        title: "Excluir Material",
-        message: "Tem certeza que deseja remover este material da lista?",
-        onConfirm: () => {
-            dbService.deleteMaterial(id);
-            loadMaterials();
-            setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        }
-    });
-  }
-
-  const handleEditClick = (mat: Material, e: React.MouseEvent) => {
-      e.stopPropagation();
-      setEditingId(mat.id);
-      setEditData({ 
-          name: mat.name, 
-          planned: mat.plannedQty, 
-          purchased: mat.purchasedQty, 
-          unit: mat.unit, 
-          cost: '',
-          stepId: mat.stepId || ''
-      });
-  }
-
-  const handleSaveEdit = (e: React.FormEvent) => {
-      e.preventDefault();
-      
-      setConfirmModal({
-        isOpen: true,
-        title: "Salvar Alterações",
-        message: "Confirma a atualização deste material? Se houver custo lançado, será criada uma despesa automaticamente.",
-        onConfirm: () => {
-            if (!editingId) return;
-
-            const purchasedQty = Number(editData.purchased);
-
-            // 1. Atualizar Material
-            dbService.updateMaterial({
-                id: editingId,
-                workId,
-                name: editData.name,
-                plannedQty: Number(editData.planned),
-                purchasedQty: purchasedQty,
-                unit: editData.unit,
-                stepId: editData.stepId || undefined
-            });
-
-            // 2. Se a quantidade comprada for zero, remove despesas associadas
-            if (purchasedQty === 0) {
-                dbService.deleteExpensesByMaterialId(editingId);
-            } else {
-                // 3. Lançar Despesa Automática (se houver valor)
-                const costValue = Number(editData.cost);
-                if (costValue > 0) {
-                    dbService.addExpense({
-                        workId,
-                        description: `Compra: ${editData.name}`,
-                        amount: costValue,
-                        paidAmount: costValue, // Assuming material purchase is paid immediately
-                        category: ExpenseCategory.MATERIAL,
-                        date: new Date().toISOString().split('T')[0],
-                        relatedMaterialId: editingId, // Vínculo com material
-                        stepId: editData.stepId || undefined // Vinculo com etapa vindo do material
-                    });
-                }
-            }
-
-            setEditingId(null);
-            loadMaterials();
-            onUpdate(); // Atualiza o orçamento global da obra
-            setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        }
-    });
-  }
-
-  const getStatus = (m: Material) => {
-    if (m.purchasedQty === 0) return { label: 'FALTANDO', color: 'bg-danger-light text-danger dark:bg-red-900/50 dark:text-red-200' };
-    if (m.purchasedQty >= m.plannedQty) return { label: 'COMPLETO', color: 'bg-success-light text-success-dark dark:bg-green-900/50 dark:text-green-200' };
-    return { label: 'PARCIAL', color: 'bg-warning-light text-warning-dark dark:bg-yellow-900/50 dark:text-yellow-200' };
-  }
-
-  // GROUP MATERIALS BY STEP
-  const groupedMaterials = materials.reduce((acc, mat) => {
-      const step = steps.find(s => s.id === mat.stepId);
-      const groupName = step ? step.name : 'Geral / Sem Etapa Vinculada';
-      if (!acc[groupName]) acc[groupName] = [];
-      acc[groupName].push(mat);
-      return acc;
-  }, {} as Record<string, Material[]>);
-
-  // Custom sort: Put 'Geral' last, sort others alphabetically or by step order if possible
-  const sortedGroupKeys = Object.keys(groupedMaterials).sort((a, b) => {
-      if (a === 'Geral / Sem Etapa Vinculada') return 1;
-      if (b === 'Geral / Sem Etapa Vinculada') return -1;
-      return a.localeCompare(b);
-  });
-
-  return (
-    <div className="space-y-8">
-      {/* Importação em Lote */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors print:hidden">
-          <h3 className="font-bold text-text-main dark:text-white mb-4 flex items-center gap-2">
-              <i className="fa-solid fa-file-import text-secondary"></i> Importação em Lote (Planilha)
-          </h3>
-          <div className="flex flex-col md:flex-row gap-4 items-end">
-              <div className="flex-1 w-full">
-                  <label className="block text-xs font-bold text-text-muted dark:text-slate-500 mb-1 uppercase">Etapa de Destino (Opcional)</label>
-                  <select 
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
-                      value={importStepId}
-                      onChange={(e) => setImportStepId(e.target.value)}
-                  >
-                      <option value="">Sem vínculo (Geral)</option>
-                      {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-              </div>
-              <div className="flex gap-3 w-full md:w-auto">
-                  <button 
-                      onClick={downloadTemplate}
-                      className="flex-1 md:flex-none px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-text-muted font-bold hover:bg-slate-50 dark:hover:bg-slate-800 text-sm transition-colors whitespace-nowrap"
-                  >
-                      <i className="fa-solid fa-download mr-2"></i> Baixar Modelo
-                  </button>
-                  <div className="relative flex-1 md:flex-none">
-                      <input 
-                          type="file" 
-                          accept=".csv" 
-                          className="hidden" 
-                          id="csv-upload"
-                          onChange={handleImport}
-                      />
-                      <label 
-                          htmlFor="csv-upload"
-                          className="cursor-pointer bg-secondary hover:bg-secondary/90 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-secondary/20 transition-all flex items-center justify-center gap-2 whitespace-nowrap h-[38px]"
-                      >
-                          <i className="fa-solid fa-upload"></i> Importar Planilha
-                      </label>
-                  </div>
-              </div>
-          </div>
-          <p className="text-xs text-text-muted dark:text-slate-500 mt-3">
-              * O arquivo deve ser formato .csv com as colunas: Nome, Quantidade, Unidade.
-          </p>
-      </div>
-
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors print:hidden">
-        <div className="flex justify-between items-center mb-5">
-           <h3 className="font-bold text-text-main dark:text-white">Adicionar Material</h3>
-           <button 
-             type="button" 
-             onClick={() => { setIsCustom(!isCustom); setCategory(''); setSubCategory(''); }}
-             className="text-sm text-primary dark:text-primary-light font-semibold hover:underline"
-           >
-             {isCustom ? "Usar Catálogo" : "Cadastro Manual"}
-           </button>
-        </div>
-
-        <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {!isCustom ? (
-            <>
-              <select 
-                className="px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none" 
-                value={category} 
-                onChange={e => { setCategory(e.target.value); setSubCategory(''); }}
-                required
-              >
-                <option value="">Selecione Categoria</option>
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              
-              <select 
-                className="px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none" 
-                value={subCategory} 
-                onChange={e => setSubCategory(e.target.value)}
-                disabled={!category}
-                required
-              >
-                <option value="">Selecione Subcategoria</option>
-                {subCategories.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-
-              <select 
-                className="px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none" 
-                value={materialName} 
-                onChange={e => setMaterialName(e.target.value)}
-                disabled={!subCategory}
-                required
-              >
-                <option value="">Selecione Material</option>
-                {items.map(i => <option key={i} value={i}>{i}</option>)}
-              </select>
-            </>
-          ) : (
-             <input 
-               placeholder="Nome do Material" 
-               className="md:col-span-3 px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none placeholder:text-text-muted dark:placeholder:text-slate-500"
-               value={materialName}
-               onChange={e => setMaterialName(e.target.value)}
-               required
-             />
-          )}
-
-          <div className="flex gap-2">
-            <input 
-              type="number" 
-              placeholder="Qtd" 
-              className="w-2/3 px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none placeholder:text-text-muted dark:placeholder:text-slate-500"
-              value={qty}
-              onChange={e => setQty(e.target.value)}
-              required
-            />
-             <input 
-              type="text" 
-              placeholder="Un" 
-              className="w-1/3 px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none placeholder:text-text-muted dark:placeholder:text-slate-500"
-              value={unit}
-              onChange={e => setUnit(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="md:col-span-2 lg:col-span-4">
-              <label className="block text-xs font-bold text-text-muted dark:text-slate-500 mb-1 uppercase">Vincular a Etapa (Opcional)</label>
-              <select 
-                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none" 
-                value={selectedStep} 
-                onChange={e => setSelectedStep(e.target.value)}
-              >
-                <option value="">Sem vínculo</option>
-                {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-          </div>
-
-          <div className="md:col-span-4 text-right">
-             <button type="submit" className="bg-primary hover:bg-primary-dark text-white px-8 py-3 rounded-xl font-bold transition-all shadow-md shadow-primary/20">
-               Adicionar à Lista
-             </button>
-          </div>
-        </form>
-      </div>
-
-      {/* Lista de Materiais Agrupada por Etapas */}
-      <div className="space-y-10">
-          {sortedGroupKeys.map(groupName => (
-              <div key={groupName} className="relative">
-                   <div className="flex items-center gap-4 mb-4">
-                        <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
-                        <h4 className="text-lg font-bold text-primary dark:text-white px-4 py-1 bg-surface dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700">
-                           {groupName}
-                        </h4>
-                        <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
-                   </div>
-                   
-                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 print:grid-cols-2 print:gap-4">
-                       {groupedMaterials[groupName].map(mat => {
-                           const status = getStatus(mat);
-                           return (
-                               <div key={mat.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all print:border-slate-300 print:break-inside-avoid">
-                                    {/* Ações */}
-                                    <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
-                                        <button 
-                                            onClick={(e) => handleEditClick(mat, e)}
-                                            className="text-slate-300 dark:text-slate-600 hover:text-primary dark:hover:text-primary-light"
-                                            title="Editar / Lançar Compra"
-                                        >
-                                            <i className="fa-solid fa-pen-to-square"></i>
-                                        </button>
-                                        <button 
-                                            onClick={(e) => handleDeleteClick(mat.id, e)}
-                                            className="text-slate-300 dark:text-slate-600 hover:text-danger"
-                                            title="Excluir"
-                                        >
-                                            <i className="fa-solid fa-trash"></i>
-                                        </button>
-                                    </div>
-
-                                    <div className="flex justify-between items-start mb-2">
-                                    <h4 className="font-bold text-text-main dark:text-white text-sm pr-16 truncate w-full" title={mat.name}>{mat.name}</h4>
-                                    </div>
-                                    
-                                    <div className="flex items-center justify-between mb-4">
-                                    <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide ${status.color}`}>
-                                        {status.label}
-                                    </span>
-                                    </div>
-                                    
-                                    <div className="flex justify-between text-xs text-text-muted dark:text-slate-500 pt-3 border-t border-slate-50 dark:border-slate-800">
-                                    <div>
-                                        <p>Planejado</p>
-                                        <p className="font-bold text-text-body dark:text-slate-300">{mat.plannedQty} {mat.unit}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p>Comprado</p>
-                                        <p className="font-bold text-text-body dark:text-slate-300">{mat.purchasedQty} {mat.unit}</p>
-                                    </div>
-                                    </div>
-                                </div>
-                           )
-                       })}
-                   </div>
-              </div>
-          ))}
-
-          {materials.length === 0 && (
-            <div className="col-span-full text-center py-12 text-text-muted dark:text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
-                <i className="fa-solid fa-box-open text-3xl mb-3 opacity-30"></i>
-                <p>Nenhum material cadastrado.</p>
-            </div>
-          )}
-      </div>
-
-      {/* Modal de Edição */}
-      {editingId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:hidden">
-              <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md p-6 shadow-2xl border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-200">
-                  <h3 className="text-lg font-bold text-text-main dark:text-white mb-4">Editar / Lançar Compra</h3>
-                  <form onSubmit={handleSaveEdit} className="space-y-4">
-                      
-                      <div>
-                          <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Nome do Material</label>
-                          <input 
-                             type="text"
-                             className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
-                             value={editData.name}
-                             onChange={e => setEditData({...editData, name: e.target.value})}
-                             required
-                          />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                          <div>
-                              <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Planejado ({editData.unit})</label>
-                              <input 
-                                 type="number"
-                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
-                                 value={editData.planned}
-                                 onChange={e => setEditData({...editData, planned: Number(e.target.value)})}
-                                 required
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Comprado ({editData.unit})</label>
-                              <input 
-                                 type="number"
-                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
-                                 value={editData.purchased}
-                                 onChange={e => setEditData({...editData, purchased: Number(e.target.value)})}
-                                 required
-                              />
-                          </div>
-                      </div>
-
-                      <div>
-                          <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Etapa Vinculada</label>
-                          <select 
-                            className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none" 
-                            value={editData.stepId} 
-                            onChange={e => setEditData({...editData, stepId: e.target.value})}
-                          >
-                            <option value="">Sem vínculo</option>
-                            {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                          </select>
-                      </div>
-
-                      <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-                          <label className="block text-sm font-bold text-primary dark:text-primary-light mb-1">
-                              <i className="fa-solid fa-receipt mr-1"></i> Lançar Valor como Despesa?
-                          </label>
-                          <div className="relative">
-                            <span className="absolute left-4 top-2.5 text-text-muted dark:text-slate-500">R$</span>
-                            <input 
-                                type="number"
-                                className="w-full pl-10 pr-4 py-2 rounded-xl border border-primary/30 dark:border-primary/50 bg-primary/5 dark:bg-primary/10 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none placeholder:text-text-muted/50"
-                                placeholder="0,00 (Opcional)"
-                                value={editData.cost}
-                                onChange={e => setEditData({...editData, cost: e.target.value})}
-                            />
-                          </div>
-                          <p className="text-[10px] text-text-muted dark:text-slate-500 mt-1">
-                              Se preenchido, cria um registro automático na aba Despesas.
-                          </p>
-                      </div>
-
-                      <div className="flex gap-3 pt-4">
-                          <button 
-                            type="button" 
-                            onClick={() => setEditingId(null)}
-                            className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-text-muted font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                          >
-                              Cancelar
-                          </button>
-                          <button 
-                            type="submit" 
-                            className="flex-1 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20"
-                          >
-                              Salvar
-                          </button>
-                      </div>
-                  </form>
-              </div>
-          </div>
-      )}
-
-      {/* Modal de Confirmação */}
-      <ConfirmModal 
-         isOpen={confirmModal.isOpen}
-         title={confirmModal.title}
-         message={confirmModal.message}
-         onConfirm={confirmModal.onConfirm}
-         onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-      />
-    </div>
-  );
-};
-
-const ReportsTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
-  const [stepFilter, setStepFilter] = useState('ALL');
-  const materials = dbService.getMaterials(work.id);
-  const steps = dbService.getSteps(work.id);
-
-  const downloadCSV = (data: any[], filename: string) => {
-      const headers = Object.keys(data[0]).join(',');
-      const rows = data.map(obj => Object.values(obj).map(v => `"${v}"`).join(',')).join('\n');
-      const csvContent = "data:text/csv;charset=utf-8," + headers + '\n' + rows;
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-  }
-
-  const exportExpenses = () => {
-      const expenses = dbService.getExpenses(work.id).map(e => ({
-          Data: new Date(e.date).toLocaleDateString('pt-BR'),
-          Descricao: e.description,
-          Categoria: e.category,
-          Valor: e.amount.toFixed(2)
-      }));
-      if (expenses.length > 0) downloadCSV(expenses, `despesas_${work.name.replace(/\s+/g, '_')}.csv`);
-      else alert("Não há despesas para exportar.");
-  };
-
-  const exportMaterials = () => {
-      const materials = dbService.getMaterials(work.id).map(m => ({
-          Material: m.name,
-          Planejado: m.plannedQty,
-          Comprado: m.purchasedQty,
-          Unidade: m.unit,
-          Status: m.purchasedQty >= m.plannedQty ? 'OK' : 'Faltando'
-      }));
-      if (materials.length > 0) downloadCSV(materials, `materiais_${work.name.replace(/\s+/g, '_')}.csv`);
-      else alert("Não há materiais para exportar.");
-  };
-
-  const filteredMaterials = materials.filter(m => stepFilter === 'ALL' || m.stepId === stepFilter);
-
-  const exportDetailedMaterials = () => {
-        const data = filteredMaterials.map(m => {
-            const stepName = steps.find(s => s.id === m.stepId)?.name || 'Geral / Sem Etapa';
-            return {
-                Material: m.name,
-                Etapa: stepName,
-                Planejado: m.plannedQty,
-                Comprado: m.purchasedQty,
-                Pendente: Math.max(0, m.plannedQty - m.purchasedQty),
-                Unidade: m.unit
-            };
+        // 1. Add Collaborator
+        dbService.addCollaborator({
+            workId,
+            name: newCollab.name,
+            role: newCollab.role as CollaboratorRole,
+            phone: newCollab.phone,
+            costType: newCollab.costType as any,
+            costValue: Number(newCollab.costValue),
+            stepId: newCollab.stepId || undefined
         });
-        if (data.length > 0) downloadCSV(data, `materiais_detalhado_${work.name.replace(/\s+/g, '_')}.csv`);
-        else alert("Não há dados para exportar.");
-  };
 
-  const missingMaterials = materials.filter(m => m.purchasedQty < m.plannedQty).length;
-
-  return (
-    <div className="space-y-8 print:block print:space-y-4">
-        <div className="flex justify-between items-center print:hidden">
-            <h2 className="text-xl font-bold text-text-main dark:text-white">Relatórios da Obra</h2>
-            <button 
-                onClick={() => window.print()} 
-                className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-primary/20 transition-all flex items-center gap-2"
-            >
-                <i className="fa-solid fa-print"></i> Imprimir PDF
-            </button>
-        </div>
-
-        {/* Resumo Financeiro - Layout Ajustado para Mobile */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-8 shadow-sm print:shadow-none print:border-slate-300 print:break-inside-avoid">
-            <div className="flex justify-between items-start mb-6">
-                <div>
-                    <h3 className="text-lg font-bold text-text-main dark:text-white flex items-center gap-2">
-                        <i className="fa-solid fa-coins text-warning"></i> Relatório Financeiro
-                    </h3>
-                    <p className="text-sm text-text-muted dark:text-slate-400">Resumo consolidado do orçamento.</p>
-                </div>
-                <button onClick={exportExpenses} className="text-primary hover:underline text-sm font-bold print:hidden">
-                    <i className="fa-solid fa-file-csv mr-1"></i> Baixar CSV
-                </button>
-            </div>
-            
-            {/* Grid ajustado: 1 coluna no mobile, 3 no desktop */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center print:grid-cols-3">
-                <div className="p-4 bg-surface dark:bg-slate-800 rounded-xl print:border print:border-slate-200">
-                    <p className="text-xs text-text-muted dark:text-slate-400 uppercase font-bold">Orçamento Total</p>
-                    <p className="text-xl font-bold text-text-main dark:text-white">R$ {work.budgetPlanned.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="p-4 bg-surface dark:bg-slate-800 rounded-xl print:border print:border-slate-200">
-                    <p className="text-xs text-text-muted dark:text-slate-400 uppercase font-bold">Total Gasto</p>
-                    <p className="text-xl font-bold text-danger">R$ {stats.totalSpent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="p-4 bg-surface dark:bg-slate-800 rounded-xl print:border print:border-slate-200">
-                    <p className="text-xs text-text-muted dark:text-slate-400 uppercase font-bold">Saldo Restante</p>
-                    <p className={`text-xl font-bold ${work.budgetPlanned - stats.totalSpent >= 0 ? 'text-success' : 'text-danger'}`}>
-                        R$ {(work.budgetPlanned - stats.totalSpent).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        {/* Resumo Materiais - Layout Ajustado para Mobile */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-8 shadow-sm print:shadow-none print:border-slate-300 print:break-inside-avoid">
-             <div className="flex justify-between items-start mb-6">
-                <div>
-                    <h3 className="text-lg font-bold text-text-main dark:text-white flex items-center gap-2">
-                        <i className="fa-solid fa-boxes-stacked text-primary"></i> Relatório de Materiais
-                    </h3>
-                    <p className="text-sm text-text-muted dark:text-slate-400">Status de compras e insumos.</p>
-                </div>
-                <button onClick={exportMaterials} className="text-primary hover:underline text-sm font-bold print:hidden">
-                    <i className="fa-solid fa-file-csv mr-1"></i> Baixar CSV
-                </button>
-            </div>
-            
-            {/* Grid ajustado */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4">
-                <div className="p-4 bg-surface dark:bg-slate-800 rounded-xl">
-                    <p className="text-2xl font-bold text-text-main dark:text-white">{materials.length}</p>
-                    <p className="text-xs text-text-muted dark:text-slate-400">Itens Totais</p>
-                </div>
-                 <div className="p-4 bg-surface dark:bg-slate-800 rounded-xl">
-                    <p className="text-2xl font-bold text-success">{materials.length - missingMaterials}</p>
-                    <p className="text-xs text-text-muted dark:text-slate-400">Comprados</p>
-                </div>
-                 <div className="p-4 bg-surface dark:bg-slate-800 rounded-xl">
-                    <p className="text-2xl font-bold text-danger">{missingMaterials}</p>
-                    <p className="text-xs text-text-muted dark:text-slate-400">Faltando</p>
-                </div>
-            </div>
-        </div>
-
-         {/* Resumo Cronograma */}
-         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-8 shadow-sm print:shadow-none print:border-slate-300 print:break-inside-avoid">
-             <div className="flex justify-between items-start mb-6">
-                <div>
-                    <h3 className="text-lg font-bold text-text-main dark:text-white flex items-center gap-2">
-                        <i className="fa-solid fa-calendar-check text-success"></i> Status do Cronograma
-                    </h3>
-                    <p className="text-sm text-text-muted dark:text-slate-400">Progresso físico da obra.</p>
-                </div>
-            </div>
-            <div className="flex items-center gap-6">
-                <div className="w-24 h-24 relative">
-                   <svg className="size-full -rotate-90" viewBox="0 0 36 36">
-                      <circle className="stroke-current text-slate-200 dark:text-slate-700" cx="18" cy="18" fill="none" r="16" strokeWidth="3"></circle>
-                      <circle className="stroke-current text-success" cx="18" cy="18" fill="none" r="16" strokeDasharray="100" strokeDashoffset={100 - stats.progress} strokeLinecap="round" strokeWidth="3"></circle>
-                   </svg>
-                   <span className="absolute inset-0 flex items-center justify-center font-bold text-text-main dark:text-white">{stats.progress}%</span>
-                </div>
-                <div>
-                    <p className="font-bold text-text-main dark:text-white">Obra {work.status}</p>
-                    <p className="text-sm text-text-muted dark:text-slate-400">Previsão de Término: {new Date(work.endDate).toLocaleDateString('pt-BR')}</p>
-                    <p className={`text-sm font-bold mt-1 ${stats.delayedSteps > 0 ? 'text-danger' : 'text-success'}`}>
-                        {stats.delayedSteps > 0 ? `${stats.delayedSteps} etapas atrasadas` : 'Cronograma em dia'}
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        {/* --- NOVO: RELATÓRIO DETALHADO DE MATERIAIS POR ETAPA --- */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-8 shadow-sm print:shadow-none print:border-slate-300 print:break-inside-avoid">
-             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <div>
-                    <h3 className="text-lg font-bold text-text-main dark:text-white flex items-center gap-2">
-                        <i className="fa-solid fa-list-check text-secondary"></i> Detalhamento de Materiais
-                    </h3>
-                    <p className="text-sm text-text-muted dark:text-slate-400">Controle de insumos por etapa.</p>
-                </div>
-                <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto print:hidden">
-                    <select 
-                        className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none text-text-main dark:text-white"
-                        value={stepFilter}
-                        onChange={(e) => setStepFilter(e.target.value)}
-                    >
-                        <option value="ALL">Todas as Etapas</option>
-                        {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                    <button onClick={exportDetailedMaterials} className="bg-surface hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-text-main dark:text-white px-4 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap">
-                        <i className="fa-solid fa-file-excel mr-1"></i> Baixar Tabela
-                    </button>
-                </div>
-            </div>
-
-            <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                    <thead>
-                        <tr className="border-b border-slate-200 dark:border-slate-700">
-                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase">Material</th>
-                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase">Etapa</th>
-                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase text-right">Planejado</th>
-                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase text-right">Comprado</th>
-                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase text-right">Pendente</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredMaterials.map(m => {
-                            const stepName = steps.find(s => s.id === m.stepId)?.name || '-';
-                            const pending = Math.max(0, m.plannedQty - m.purchasedQty);
-                            
-                            return (
-                                <tr key={m.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                    <td className="py-3 px-2 text-sm text-text-main dark:text-white font-medium">{m.name}</td>
-                                    <td className="py-3 px-2 text-xs text-text-muted dark:text-slate-400">{stepName}</td>
-                                    <td className="py-3 px-2 text-sm text-text-body dark:text-slate-300 text-right">{m.plannedQty} {m.unit}</td>
-                                    <td className="py-3 px-2 text-sm text-text-body dark:text-slate-300 text-right">{m.purchasedQty} {m.unit}</td>
-                                    <td className={`py-3 px-2 text-sm font-bold text-right ${pending > 0 ? 'text-danger' : 'text-success'}`}>
-                                        {pending} {m.unit}
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                        {filteredMaterials.length === 0 && (
-                            <tr>
-                                <td colSpan={5} className="py-8 text-center text-text-muted dark:text-slate-400 italic">
-                                    Nenhum material encontrado para esta seleção.
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-  );
-};
-
-// --- NEW FILES TAB ---
-const FilesTab: React.FC<{ workId: string }> = ({ workId }) => {
-    const [files, setFiles] = useState<WorkFile[]>([]);
-    const [selectedCategory, setSelectedCategory] = useState<FileCategory | ''>('');
-    const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, id: string | null}>({isOpen: false, id: null});
-    const [uploading, setUploading] = useState(false);
-
-    const loadFiles = () => {
-        setFiles(dbService.getFiles(workId));
-    };
-
-    useEffect(loadFiles, [workId]);
-
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file && selectedCategory) {
-            // Check size limit (LocalStorage limit is approx 5MB)
-            if (file.size > 2 * 1024 * 1024) { // 2MB limit for safety
-                alert("O arquivo é muito grande para o armazenamento local. Max: 2MB.");
-                return;
-            }
-
-            setUploading(true);
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64 = reader.result as string;
-                dbService.addFile({
-                    workId,
-                    name: file.name,
-                    category: selectedCategory,
-                    url: base64,
-                    type: file.type,
-                    date: new Date().toISOString()
-                });
-                setUploading(false);
-                setSelectedCategory(''); // Reset
-                loadFiles();
-            };
-            reader.readAsDataURL(file);
-        } else if (!selectedCategory) {
-            alert("Selecione um tipo de projeto antes de enviar.");
-            e.target.value = ''; // Reset input
+        // 2. Auto-Launch Expense if value > 0
+        const costVal = Number(newCollab.costValue);
+        if (costVal > 0) {
+            dbService.addExpense({
+                workId,
+                description: `Mão de Obra - ${newCollab.name} (${newCollab.role})`,
+                amount: costVal,
+                paidAmount: 0, // Starts unpaid/pending usually for labor contracts
+                quantity: 1,
+                category: ExpenseCategory.LABOR,
+                date: new Date().toISOString().split('T')[0],
+                stepId: newCollab.stepId || undefined
+            });
+            alert("Colaborador salvo e despesa lançada automaticamente!");
         }
-    };
+
+        setNewCollab({ name: '', role: '', phone: '', costType: 'DIARIA', costValue: '', stepId: '' });
+        loadData();
+    }
+
+    const handleAddSupplier = (e: React.FormEvent) => {
+        e.preventDefault();
+        dbService.addSupplier({
+            workId,
+            name: newSupplier.name,
+            category: newSupplier.category as SupplierCategory,
+            contactName: newSupplier.contactName,
+            phone: newSupplier.phone,
+            email: newSupplier.email
+        });
+        setNewSupplier({ name: '', category: '', contactName: '', phone: '', email: '' });
+        loadData();
+    }
 
     const handleDelete = () => {
-        if (confirmModal.id) {
-            dbService.deleteFile(confirmModal.id);
-            setConfirmModal({isOpen: false, id: null});
-            loadFiles();
-        }
-    };
-
-    // Separate files
-    const projectFiles = files.filter(f => f.category !== FileCategory.GENERAL && f.category !== FileCategory.OTHER_PROJECT);
-    const generalFiles = files.filter(f => f.category === FileCategory.GENERAL || f.category === FileCategory.OTHER_PROJECT);
-
-    const getIconForType = (mimeType: string) => {
-        if (mimeType.includes('pdf')) return 'fa-file-pdf';
-        if (mimeType.includes('image')) return 'fa-file-image';
-        if (mimeType.includes('word') || mimeType.includes('document')) return 'fa-file-word';
-        if (mimeType.includes('sheet') || mimeType.includes('excel')) return 'fa-file-excel';
-        return 'fa-file';
-    };
-
-    return (
-        <div className="space-y-8">
-            {/* Upload Area */}
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
-                <h3 className="font-bold text-text-main dark:text-white mb-4">Adicionar Novo Arquivo</h3>
-                
-                <div className="flex flex-col gap-4">
-                    <div>
-                        <p className="text-sm text-text-muted dark:text-slate-400 mb-2 font-bold uppercase text-xs">1. Selecione o Tipo de Projeto</p>
-                        <div className="flex flex-wrap gap-2">
-                            {Object.values(FileCategory).map(cat => (
-                                <button
-                                    key={cat}
-                                    onClick={() => setSelectedCategory(cat)}
-                                    className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${selectedCategory === cat ? 'bg-primary text-white border-primary' : 'bg-surface dark:bg-slate-800 text-text-muted dark:text-slate-400 border-transparent hover:border-slate-300 dark:hover:border-slate-600'}`}
-                                >
-                                    {cat}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                        <p className="text-sm text-text-muted dark:text-slate-400 mb-2 font-bold uppercase text-xs">2. Faça Upload</p>
-                        <div className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-colors ${selectedCategory ? 'border-primary/30 bg-primary/5 cursor-pointer hover:bg-primary/10' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed opacity-60'}`}>
-                            <input 
-                                type="file" 
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
-                                onChange={handleFileUpload}
-                                disabled={!selectedCategory || uploading}
-                            />
-                            {uploading ? (
-                                <div className="flex flex-col items-center text-primary">
-                                    <i className="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i>
-                                    <p className="font-bold">Enviando...</p>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col items-center text-text-muted dark:text-slate-400">
-                                    <i className="fa-solid fa-cloud-arrow-up text-3xl mb-2"></i>
-                                    <p className="font-bold">{selectedCategory ? "Clique ou arraste o arquivo aqui" : "Selecione uma categoria acima primeiro"}</p>
-                                    <p className="text-xs mt-1">PDF, Imagens, Excel (Max 2MB)</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Section: Project Files */}
-            <div>
-                <h3 className="text-lg font-bold text-text-main dark:text-white mb-4 flex items-center gap-2">
-                    <i className="fa-solid fa-compass-drafting text-secondary"></i> Projetos Técnicos
-                </h3>
-                {projectFiles.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {projectFiles.map(file => (
-                            <div key={file.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-start gap-4 hover:shadow-md transition-shadow group relative">
-                                <div className="w-12 h-12 rounded-lg bg-surface dark:bg-slate-800 flex items-center justify-center shrink-0">
-                                    <i className={`fa-solid ${getIconForType(file.type)} text-2xl text-text-muted dark:text-slate-500`}></i>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-bold text-primary dark:text-primary-light uppercase mb-0.5">{file.category}</p>
-                                    <h4 className="font-bold text-text-main dark:text-white truncate text-sm" title={file.name}>{file.name}</h4>
-                                    <p className="text-xs text-text-muted dark:text-slate-500 mt-1">{new Date(file.date).toLocaleDateString()}</p>
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                     <a href={file.url} download={file.name} className="text-slate-300 hover:text-primary transition-colors" title="Baixar">
-                                        <i className="fa-solid fa-download"></i>
-                                     </a>
-                                     <button onClick={() => setConfirmModal({isOpen: true, id: file.id})} className="text-slate-300 hover:text-danger transition-colors" title="Excluir">
-                                        <i className="fa-solid fa-trash"></i>
-                                     </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="text-center py-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                        <p className="text-text-muted dark:text-slate-500">Nenhum projeto técnico (hidráulico, elétrico, etc) adicionado.</p>
-                    </div>
-                )}
-            </div>
-
-            {/* Section: General Files */}
-            <div>
-                 <h3 className="text-lg font-bold text-text-main dark:text-white mb-4 flex items-center gap-2">
-                    <i className="fa-solid fa-folder-open text-warning"></i> Arquivos Gerais
-                </h3>
-                {generalFiles.length > 0 ? (
-                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {generalFiles.map(file => (
-                            <div key={file.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-start gap-4 hover:shadow-md transition-shadow group relative">
-                                <div className="w-12 h-12 rounded-lg bg-surface dark:bg-slate-800 flex items-center justify-center shrink-0">
-                                    <i className={`fa-solid ${getIconForType(file.type)} text-2xl text-text-muted dark:text-slate-500`}></i>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-bold text-text-muted dark:text-slate-400 uppercase mb-0.5">{file.category}</p>
-                                    <h4 className="font-bold text-text-main dark:text-white truncate text-sm" title={file.name}>{file.name}</h4>
-                                    <p className="text-xs text-text-muted dark:text-slate-500 mt-1">{new Date(file.date).toLocaleDateString()}</p>
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                     <a href={file.url} download={file.name} className="text-slate-300 hover:text-primary transition-colors" title="Baixar">
-                                        <i className="fa-solid fa-download"></i>
-                                     </a>
-                                     <button onClick={() => setConfirmModal({isOpen: true, id: file.id})} className="text-slate-300 hover:text-danger transition-colors" title="Excluir">
-                                        <i className="fa-solid fa-trash"></i>
-                                     </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="text-center py-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                        <p className="text-text-muted dark:text-slate-500">Nenhum arquivo geral adicionado.</p>
-                    </div>
-                )}
-            </div>
-
-            <ConfirmModal 
-                isOpen={confirmModal.isOpen}
-                title="Excluir Arquivo"
-                message="Tem certeza que deseja excluir este arquivo permanentemente?"
-                onConfirm={handleDelete}
-                onCancel={() => setConfirmModal({isOpen: false, id: null})}
-            />
-        </div>
-    );
-};
-
-const PhotosTab: React.FC<{ workId: string }> = ({ workId }) => {
-    const [photos, setPhotos] = useState<WorkPhoto[]>([]);
-    const [filter, setFilter] = useState<'ALL' | 'BEFORE' | 'PROGRESS' | 'AFTER'>('ALL');
-    const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, id: string | null}>({isOpen: false, id: null});
-
-    const loadPhotos = () => {
-        setPhotos(dbService.getPhotos(workId));
-    };
-
-    useEffect(loadPhotos, [workId]);
-
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            // Check size (limit to ~3MB for MVP local storage safety)
-            if (file.size > 3 * 1024 * 1024) {
-                alert("Por favor, envie uma imagem menor que 3MB.");
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64 = reader.result as string;
-                dbService.addPhoto({
-                    workId,
-                    url: base64,
-                    date: new Date().toISOString(),
-                    description: '', // Could add a prompt for this
-                    type: 'PROGRESS' // Default, could allow selection before upload
-                });
-                loadPhotos();
-            };
-            reader.readAsDataURL(file);
-        }
-    };
-
-    const handleDelete = () => {
-        if (confirmModal.id) {
-            dbService.deletePhoto(confirmModal.id);
-            setConfirmModal({isOpen: false, id: null});
-            loadPhotos();
+        if (confirmModal.id && confirmModal.type) {
+            if (confirmModal.type === 'TEAM') dbService.deleteCollaborator(confirmModal.id);
+            else dbService.deleteSupplier(confirmModal.id);
+            
+            setConfirmModal({isOpen: false, id: null, type: null});
+            loadData();
         }
     }
 
-    const filteredPhotos = filter === 'ALL' ? photos : photos.filter(p => p.type === filter);
-
     return (
         <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="flex bg-surface dark:bg-slate-800 p-1 rounded-xl">
-                    {['ALL', 'BEFORE', 'PROGRESS', 'AFTER'].map((type) => (
-                        <button
-                            key={type}
-                            onClick={() => setFilter(type as any)}
-                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                                filter === type 
-                                ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' 
-                                : 'text-text-muted dark:text-slate-400 hover:text-text-main'
-                            }`}
-                        >
-                            {type === 'ALL' ? 'Todas' : type === 'BEFORE' ? 'Antes' : type === 'PROGRESS' ? 'Durante' : 'Depois'}
-                        </button>
-                    ))}
-                </div>
-                
-                <div className="relative">
-                    <input 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
-                        id="photo-upload"
-                        onChange={handleFileUpload}
-                    />
-                    <label 
-                        htmlFor="photo-upload"
-                        className="cursor-pointer bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-primary/20 transition-all flex items-center gap-2"
-                    >
-                        <i className="fa-solid fa-cloud-arrow-up"></i> Adicionar Foto
-                    </label>
-                </div>
+             <div className="flex bg-surface dark:bg-slate-800 p-1 rounded-xl w-full md:w-fit">
+                <button 
+                    onClick={() => setSubTab('TEAM')}
+                    className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${subTab === 'TEAM' ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' : 'text-text-muted dark:text-slate-400'}`}
+                >
+                    Colaboradores
+                </button>
+                <button 
+                    onClick={() => setSubTab('SUPPLIER')}
+                    className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${subTab === 'SUPPLIER' ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' : 'text-text-muted dark:text-slate-400'}`}
+                >
+                    Fornecedores
+                </button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {filteredPhotos.map(photo => (
-                    <div key={photo.id} className="group relative aspect-square bg-slate-100 dark:bg-slate-800 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
-                        <img src={photo.url} alt="Obra" className="w-full h-full object-cover" />
-                        
-                        {/* Overlay */}
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
-                             <div className="flex justify-between items-end text-white">
-                                <span className="text-xs font-medium bg-black/50 px-2 py-1 rounded">
-                                    {new Date(photo.date).toLocaleDateString()}
-                                </span>
-                                <button 
-                                    onClick={() => setConfirmModal({isOpen: true, id: photo.id})}
-                                    className="bg-white text-danger p-2 rounded-lg hover:bg-slate-100 transition-colors"
+            {subTab === 'TEAM' && (
+                <div className="space-y-6">
+                    {/* ADD FORM */}
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                        <h3 className="font-bold text-text-main dark:text-white mb-4">Adicionar Colaborador</h3>
+                        <form onSubmit={handleAddCollaborator} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <input 
+                                placeholder="Nome Completo"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newCollab.name}
+                                onChange={e => setNewCollab({...newCollab, name: e.target.value})}
+                                required
+                            />
+                             <select 
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newCollab.role}
+                                onChange={e => setNewCollab({...newCollab, role: e.target.value})}
+                                required
+                            >
+                                <option value="">Função</option>
+                                {Object.values(CollaboratorRole).map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                            <input 
+                                placeholder="Telefone / Zap"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newCollab.phone}
+                                onChange={e => setNewCollab({...newCollab, phone: e.target.value})}
+                                required
+                            />
+                            
+                            {/* LINHA 2 */}
+                            <div className="flex gap-2">
+                                <select 
+                                    className="w-1/2 px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                    value={newCollab.costType}
+                                    onChange={e => setNewCollab({...newCollab, costType: e.target.value})}
+                                >
+                                    <option value="DIARIA">Diária</option>
+                                    <option value="EMPREITA">Empreita</option>
+                                    <option value="MENSAL">Mensal</option>
+                                </select>
+                                <input 
+                                    type="number"
+                                    placeholder="Valor (R$)"
+                                    className="w-1/2 px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                    value={newCollab.costValue}
+                                    onChange={e => setNewCollab({...newCollab, costValue: e.target.value})}
+                                    required
+                                />
+                            </div>
+
+                            <select 
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newCollab.stepId}
+                                onChange={e => setNewCollab({...newCollab, stepId: e.target.value})}
+                            >
+                                <option value="">Vincular Etapa (Opcional)</option>
+                                {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+
+                            <button type="submit" className="bg-primary hover:bg-primary-dark text-white font-bold rounded-xl py-2 shadow-md">
+                                Adicionar & Lançar Custo
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* LIST */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {collaborators.map(collab => {
+                            const stepName = steps.find(s => s.id === collab.stepId)?.name;
+                            return (
+                                <div key={collab.id} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all">
+                                    <button 
+                                        onClick={() => setConfirmModal({isOpen: true, id: collab.id, type: 'TEAM'})}
+                                        className="absolute top-4 right-4 text-slate-300 hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <i className="fa-solid fa-trash"></i>
+                                    </button>
+                                    
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold">
+                                            {collab.name.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-text-main dark:text-white">{collab.name}</h4>
+                                            <span className="text-xs bg-surface dark:bg-slate-800 text-text-muted dark:text-slate-400 px-2 py-0.5 rounded">{collab.role}</span>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2 text-sm text-text-body dark:text-slate-300">
+                                        <p className="flex items-center gap-2">
+                                            <i className="fa-solid fa-phone text-slate-400 text-xs"></i> 
+                                            {collab.phone}
+                                        </p>
+                                        <p className="flex items-center gap-2">
+                                            <i className="fa-solid fa-money-bill text-success text-xs"></i> 
+                                            R$ {collab.costValue.toLocaleString()} / {collab.costType.toLowerCase()}
+                                        </p>
+                                        {stepName && (
+                                            <p className="flex items-center gap-2 text-xs text-text-muted dark:text-slate-500">
+                                                <i className="fa-solid fa-link text-slate-400 text-[10px]"></i> 
+                                                {stepName}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50 dark:border-slate-800">
+                                        <a href={`tel:${collab.phone}`} className="flex-1 bg-surface hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-text-main dark:text-white text-xs font-bold py-2 rounded-lg text-center transition-colors">
+                                            Ligar
+                                        </a>
+                                        <a href={`https://wa.me/55${collab.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 rounded-lg text-center transition-colors">
+                                            WhatsApp
+                                        </a>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {subTab === 'SUPPLIER' && (
+                <div className="space-y-6">
+                    {/* ADD FORM */}
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                        <h3 className="font-bold text-text-main dark:text-white mb-4">Adicionar Fornecedor</h3>
+                        <form onSubmit={handleAddSupplier} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                            <input 
+                                placeholder="Nome da Loja/Empresa"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newSupplier.name}
+                                onChange={e => setNewSupplier({...newSupplier, name: e.target.value})}
+                                required
+                            />
+                             <select 
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newSupplier.category}
+                                onChange={e => setNewSupplier({...newSupplier, category: e.target.value})}
+                                required
+                            >
+                                <option value="">Categoria</option>
+                                {Object.values(SupplierCategory).map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <input 
+                                placeholder="Nome do Contato"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newSupplier.contactName}
+                                onChange={e => setNewSupplier({...newSupplier, contactName: e.target.value})}
+                                required
+                            />
+                            <input 
+                                placeholder="Telefone / Zap"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newSupplier.phone}
+                                onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})}
+                                required
+                            />
+                            <button type="submit" className="bg-primary hover:bg-primary-dark text-white font-bold rounded-xl py-2">
+                                Adicionar
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* LIST */}
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {suppliers.map(sup => (
+                            <div key={sup.id} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all">
+                                 <button 
+                                    onClick={() => setConfirmModal({isOpen: true, id: sup.id, type: 'SUPPLIER'})}
+                                    className="absolute top-4 right-4 text-slate-300 hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
                                 >
                                     <i className="fa-solid fa-trash"></i>
                                 </button>
-                             </div>
-                        </div>
+                                
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="w-10 h-10 rounded-full bg-warning/10 text-warning flex items-center justify-center font-bold">
+                                        <i className="fa-solid fa-store"></i>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-text-main dark:text-white truncate max-w-[150px]">{sup.name}</h4>
+                                        <span className="text-xs bg-surface dark:bg-slate-800 text-text-muted dark:text-slate-400 px-2 py-0.5 rounded">{sup.category}</span>
+                                    </div>
+                                </div>
+                                <div className="space-y-2 text-sm text-text-body dark:text-slate-300">
+                                    <p className="flex items-center gap-2">
+                                        <i className="fa-regular fa-user text-slate-400 text-xs"></i> 
+                                        {sup.contactName}
+                                    </p>
+                                    <p className="flex items-center gap-2">
+                                        <i className="fa-solid fa-phone text-slate-400 text-xs"></i> 
+                                        {sup.phone}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50 dark:border-slate-800">
+                                    <a href={`tel:${sup.phone}`} className="flex-1 bg-surface hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-text-main dark:text-white text-xs font-bold py-2 rounded-lg text-center transition-colors">
+                                        Ligar
+                                    </a>
+                                    <a href={`https://wa.me/55${sup.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 rounded-lg text-center transition-colors">
+                                        WhatsApp
+                                    </a>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                ))}
-                
-                {filteredPhotos.length === 0 && (
-                     <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900">
-                        <i className="fa-solid fa-images text-4xl text-slate-300 dark:text-slate-600 mb-3"></i>
-                        <p className="text-text-muted dark:text-slate-400">Nenhuma foto encontrada nesta categoria.</p>
-                     </div>
-                )}
-            </div>
-
-            {/* Confirm Modal for Photo Delete */}
+                </div>
+            )}
+            
             <ConfirmModal 
                 isOpen={confirmModal.isOpen}
-                title="Excluir Foto"
-                message="Deseja realmente excluir esta imagem? Essa ação não pode ser desfeita."
+                title={`Excluir ${confirmModal.type === 'TEAM' ? 'Colaborador' : 'Fornecedor'}`}
+                message="Tem certeza que deseja excluir? Essa ação não pode ser desfeita."
                 onConfirm={handleDelete}
-                onCancel={() => setConfirmModal({isOpen: false, id: null})}
+                onCancel={() => setConfirmModal({isOpen: false, id: null, type: null})}
             />
         </div>
     );
@@ -2505,6 +1722,225 @@ CPF: [CPF]`
   );
 };
 
+const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workId, onUpdate }) => {
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [newMat, setNewMat] = useState({ name: '', plannedQty: '', purchasedQty: '0', unit: 'un' });
+
+  useEffect(() => {
+    setMaterials(dbService.getMaterials(workId));
+  }, [workId]);
+
+  const handleAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    dbService.addMaterial({
+      workId,
+      name: newMat.name,
+      plannedQty: Number(newMat.plannedQty),
+      purchasedQty: Number(newMat.purchasedQty),
+      unit: newMat.unit
+    });
+    setNewMat({ name: '', plannedQty: '', purchasedQty: '0', unit: 'un' });
+    setMaterials(dbService.getMaterials(workId));
+    onUpdate();
+  };
+  
+  const handleDelete = (id: string) => {
+      if(window.confirm('Excluir material?')) {
+          dbService.deleteMaterial(id);
+          setMaterials(dbService.getMaterials(workId));
+          onUpdate();
+      }
+  };
+
+  const handleUpdateQty = (m: Material, qty: number) => {
+      dbService.updateMaterial({...m, purchasedQty: qty});
+      setMaterials(dbService.getMaterials(workId));
+      onUpdate();
+  }
+
+  return (
+    <div className="space-y-6">
+       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+         <h3 className="font-bold text-text-main dark:text-white mb-4">Adicionar Material</h3>
+         <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+             <input className="md:col-span-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white outline-none focus:ring-2 focus:ring-primary" placeholder="Nome do Material (Ex: Cimento)" value={newMat.name} onChange={e => setNewMat({...newMat, name: e.target.value})} required />
+             <input type="number" className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white outline-none focus:ring-2 focus:ring-primary" placeholder="Qtd Planejada" value={newMat.plannedQty} onChange={e => setNewMat({...newMat, plannedQty: e.target.value})} required />
+             <div className="flex gap-2">
+                 <input className="w-2/3 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white outline-none focus:ring-2 focus:ring-primary" placeholder="Unidade" value={newMat.unit} onChange={e => setNewMat({...newMat, unit: e.target.value})} required />
+                 <button type="submit" className="w-1/3 bg-primary text-white rounded-xl hover:bg-primary-dark transition-colors"><i className="fa-solid fa-plus"></i></button>
+             </div>
+         </form>
+       </div>
+
+       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+           {materials.map(m => {
+               const status = m.purchasedQty >= m.plannedQty ? 'OK' : 'FALTANDO';
+               const progress = Math.min((m.purchasedQty / m.plannedQty) * 100, 100);
+               return (
+                   <div key={m.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm relative group">
+                        <button onClick={() => handleDelete(m.id)} className="absolute top-4 right-4 text-slate-300 hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"><i className="fa-solid fa-trash"></i></button>
+                        <h4 className="font-bold text-text-main dark:text-white mb-1">{m.name}</h4>
+                        <div className="flex justify-between text-sm text-text-muted dark:text-slate-400 mb-2">
+                            <span>Planejado: {m.plannedQty} {m.unit}</span>
+                            <span className={status === 'OK' ? 'text-success font-bold' : 'text-warning font-bold'}>{status}</span>
+                        </div>
+                        <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 mb-3">
+                            <div className={`h-2 rounded-full ${status === 'OK' ? 'bg-success' : 'bg-warning'}`} style={{width: `${progress}%`}}></div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => handleUpdateQty(m, Math.max(0, m.purchasedQty - 1))} className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-text-main dark:text-white">-</button>
+                            <span className="flex-1 text-center font-bold text-text-main dark:text-white">{m.purchasedQty} {m.unit} comprados</span>
+                            <button onClick={() => handleUpdateQty(m, m.purchasedQty + 1)} className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-text-main dark:text-white">+</button>
+                        </div>
+                   </div>
+               )
+           })}
+       </div>
+    </div>
+  );
+};
+
+const FilesTab: React.FC<{ workId: string }> = ({ workId }) => {
+    const [files, setFiles] = useState<WorkFile[]>([]);
+    const [uploading, setUploading] = useState(false);
+    
+    useEffect(() => setFiles(dbService.getFiles(workId)), [workId]);
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setUploading(true);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            dbService.addFile({
+                workId,
+                name: file.name,
+                category: FileCategory.GENERAL,
+                type: file.type,
+                url: reader.result as string,
+                date: new Date().toISOString()
+            });
+            setFiles(dbService.getFiles(workId));
+            setUploading(false);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleDelete = (id: string) => {
+        if(window.confirm('Excluir arquivo?')) {
+            dbService.deleteFile(id);
+            setFiles(dbService.getFiles(workId));
+        }
+    };
+    
+    return (
+        <div className="space-y-6">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
+                <input type="file" id="fileUpload" className="hidden" onChange={handleFileUpload} />
+                <label htmlFor="fileUpload" className={`cursor-pointer inline-flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-xl font-bold hover:bg-primary-dark transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {uploading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
+                    {uploading ? 'Enviando...' : 'Adicionar Arquivo'}
+                </label>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {files.map(f => (
+                    <div key={f.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4 relative group">
+                        <button onClick={() => handleDelete(f.id)} className="absolute top-2 right-2 text-slate-300 hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"><i className="fa-solid fa-trash"></i></button>
+                        <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center text-2xl text-slate-400">
+                            <i className={`fa-solid ${f.type.includes('image') ? 'fa-image' : f.type.includes('pdf') ? 'fa-file-pdf' : 'fa-file'}`}></i>
+                        </div>
+                        <div className="overflow-hidden">
+                             <a href={f.url} download={f.name} className="font-bold text-text-main dark:text-white truncate block hover:underline" target="_blank" rel="noreferrer">{f.name}</a>
+                             <p className="text-xs text-text-muted dark:text-slate-500">{new Date(f.date).toLocaleDateString()}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const PhotosTab: React.FC<{ workId: string }> = ({ workId }) => {
+    const [photos, setPhotos] = useState<WorkPhoto[]>([]);
+    const [uploading, setUploading] = useState(false);
+    
+    useEffect(() => setPhotos(dbService.getPhotos(workId)), [workId]);
+
+    const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            dbService.addPhoto({
+                workId,
+                url: reader.result as string,
+                description: 'Foto da Obra',
+                date: new Date().toISOString(),
+                type: 'PROGRESS'
+            });
+            setPhotos(dbService.getPhotos(workId));
+            setUploading(false);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleDelete = (id: string) => {
+        if(window.confirm('Excluir foto?')) {
+            dbService.deletePhoto(id);
+            setPhotos(dbService.getPhotos(workId));
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">
+                <input type="file" id="photoUpload" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                <label htmlFor="photoUpload" className={`cursor-pointer inline-flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-xl font-bold hover:bg-primary-dark transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {uploading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-camera"></i>}
+                    {uploading ? 'Enviando...' : 'Adicionar Foto'}
+                </label>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {photos.map(p => (
+                    <div key={p.id} className="relative group aspect-square bg-slate-100 dark:bg-slate-800 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                        <img src={p.url} alt="Obra" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            <a href={p.url} download={`foto-${p.date}.png`} className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-800 hover:text-primary"><i className="fa-solid fa-download"></i></a>
+                            <button onClick={() => handleDelete(p.id)} className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-800 hover:text-danger"><i className="fa-solid fa-trash"></i></button>
+                        </div>
+                        <div className="absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-xs">
+                            {new Date(p.date).toLocaleDateString()}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const ReportsTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => window.print()}>
+                <div className="w-14 h-14 bg-primary/10 text-primary rounded-xl flex items-center justify-center text-2xl mb-4">
+                    <i className="fa-solid fa-print"></i>
+                </div>
+                <h3 className="font-bold text-text-main dark:text-white text-lg mb-2">Relatório Geral</h3>
+                <p className="text-sm text-text-muted dark:text-slate-400">Imprimir ou salvar PDF com o resumo completo da obra, cronograma e custos.</p>
+            </div>
+             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-all cursor-pointer opacity-50">
+                <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl flex items-center justify-center text-2xl mb-4">
+                    <i className="fa-solid fa-chart-line"></i>
+                </div>
+                <h3 className="font-bold text-text-main dark:text-white text-lg mb-2">Relatório de Custos</h3>
+                <p className="text-sm text-text-muted dark:text-slate-400">Detalhamento financeiro por categoria e período. (Em breve)</p>
+            </div>
+        </div>
+    );
+};
+
 // --- Main Page Component ---
 
 const WorkDetail: React.FC = () => {
@@ -2539,7 +1975,8 @@ const WorkDetail: React.FC = () => {
     { name: 'Despesas', icon: 'fa-receipt' },
     { name: 'Materiais', icon: 'fa-box-open' },
     { name: 'Relatórios', icon: 'fa-file-pdf' },
-    { name: 'Projetos e Arquivos', icon: 'fa-folder-open' }, // Nova aba adicionada
+    { name: 'Projetos e Arquivos', icon: 'fa-folder-open' },
+    { name: 'Equipe e Fornecedores', icon: 'fa-users' }, // Nova aba adicionada
     { name: 'Fotos', icon: 'fa-camera' },
     { name: 'Bônus', icon: 'fa-star' },
   ];
@@ -2640,8 +2077,9 @@ const WorkDetail: React.FC = () => {
         {activeTab === 3 && <MaterialsTab workId={work.id} onUpdate={() => setStats(dbService.calculateWorkStats(work.id))} />}
         {activeTab === 4 && <ReportsTab work={work} stats={stats} />}
         {activeTab === 5 && <FilesTab workId={work.id} />}
-        {activeTab === 6 && <PhotosTab workId={work.id} />}
-        {activeTab === 7 && <BonusTab workId={work.id} />}
+        {activeTab === 6 && <TeamTab workId={work.id} />} 
+        {activeTab === 7 && <PhotosTab workId={work.id} />}
+        {activeTab === 8 && <BonusTab workId={work.id} />}
       </div>
     </div>
   );

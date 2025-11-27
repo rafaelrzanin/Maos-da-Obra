@@ -2,7 +2,8 @@
 
 import { 
   User, Work, Step, Expense, Material, WorkPhoto, WorkFile,
-  PlanType, WorkStatus, StepStatus, Notification
+  PlanType, WorkStatus, StepStatus, Notification,
+  Collaborator, Supplier
 } from '../types';
 import { STANDARD_PHASES } from './standards';
 
@@ -17,8 +18,10 @@ interface DbSchema {
   expenses: Expense[];
   materials: Material[];
   photos: WorkPhoto[];
-  files: WorkFile[]; // Adicionado array de arquivos
+  files: WorkFile[];
   notifications: Notification[];
+  collaborators: Collaborator[]; // New
+  suppliers: Supplier[]; // New
 }
 
 const initialDb: DbSchema = {
@@ -30,8 +33,10 @@ const initialDb: DbSchema = {
   expenses: [],
   materials: [],
   photos: [],
-  files: [], // Inicialização
-  notifications: []
+  files: [],
+  notifications: [],
+  collaborators: [],
+  suppliers: []
 };
 
 // Helper to get DB
@@ -42,8 +47,10 @@ const getDb = (): DbSchema => {
     return initialDb;
   }
   const db = JSON.parse(stored);
-  // Ensure files array exists for migration
+  // Ensure new arrays exist for migration
   if (!db.files) db.files = [];
+  if (!db.collaborators) db.collaborators = [];
+  if (!db.suppliers) db.suppliers = [];
   return db;
 };
 
@@ -215,6 +222,8 @@ export const dbService = {
     db.materials = db.materials.filter(m => m.workId !== workId);
     db.photos = db.photos.filter(p => p.workId !== workId);
     db.files = db.files.filter(f => f.workId !== workId);
+    db.collaborators = db.collaborators.filter(c => c.workId !== workId);
+    db.suppliers = db.suppliers.filter(s => s.workId !== workId);
     saveDb(db);
   },
 
@@ -362,7 +371,7 @@ export const dbService = {
     saveDb(db);
   },
 
-  // --- FILES (NEW) ---
+  // --- FILES ---
   getFiles: (workId: string): WorkFile[] => {
     const db = getDb();
     // Default empty if legacy
@@ -438,5 +447,45 @@ export const dbService = {
       progress: totalSteps === 0 ? 0 : Math.round((completedSteps / totalSteps) * 100),
       delayedSteps
     };
+  },
+
+  // --- COLLABORATORS ---
+  getCollaborators: (workId: string): Collaborator[] => {
+    const db = getDb();
+    return db.collaborators.filter(c => c.workId === workId);
+  },
+
+  addCollaborator: (collab: Omit<Collaborator, 'id'>) => {
+    const db = getDb();
+    if (!db.collaborators) db.collaborators = [];
+    db.collaborators.push({ ...collab, id: Math.random().toString(36).substr(2, 9) });
+    saveDb(db);
+  },
+
+  deleteCollaborator: (id: string) => {
+    const db = getDb();
+    if (!db.collaborators) return;
+    db.collaborators = db.collaborators.filter(c => c.id !== id);
+    saveDb(db);
+  },
+
+  // --- SUPPLIERS ---
+  getSuppliers: (workId: string): Supplier[] => {
+    const db = getDb();
+    return db.suppliers.filter(s => s.workId === workId);
+  },
+
+  addSupplier: (sup: Omit<Supplier, 'id'>) => {
+    const db = getDb();
+    if (!db.suppliers) db.suppliers = [];
+    db.suppliers.push({ ...sup, id: Math.random().toString(36).substr(2, 9) });
+    saveDb(db);
+  },
+
+  deleteSupplier: (id: string) => {
+    const db = getDb();
+    if (!db.suppliers) return;
+    db.suppliers = db.suppliers.filter(s => s.id !== id);
+    saveDb(db);
   }
 };
