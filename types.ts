@@ -103,6 +103,27 @@ export interface WorkPhoto {
   type: 'BEFORE' | 'AFTER' | 'PROGRESS';
 }
 
+// --- NOVOS TIPOS PARA ARQUIVOS ---
+export enum FileCategory {
+  ARCHITECTURAL = 'Arquitetônico',
+  STRUCTURAL = 'Estrutural',
+  HYDRAULIC = 'Hidráulico',
+  ELECTRICAL = 'Elétrico',
+  INTERIOR = 'Interiores',
+  OTHER_PROJECT = 'Outros Projetos',
+  GENERAL = 'Geral / Documentos'
+}
+
+export interface WorkFile {
+  id: string;
+  workId: string;
+  name: string;
+  category: FileCategory;
+  url: string; // Base64 data URI
+  type: string; // MIME type (pdf, image, etc)
+  date: string;
+}
+
 export interface Notification {
   id: string;
   userId: string;

@@ -1,8 +1,9 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db';
-import { Work, Step, Expense, Material, WorkPhoto, StepStatus, ExpenseCategory, WorkStatus } from '../types';
+import { Work, Step, Expense, Material, WorkPhoto, StepStatus, ExpenseCategory, WorkStatus, FileCategory, WorkFile } from '../types';
 import { Recharts } from '../components/RechartsWrapper';
 import { STANDARD_MATERIAL_CATALOG, STANDARD_PHASES, STANDARD_EXPENSE_CATALOG } from '../services/standards';
 
@@ -1828,6 +1829,217 @@ const ReportsTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
   );
 };
 
+// --- NEW FILES TAB ---
+const FilesTab: React.FC<{ workId: string }> = ({ workId }) => {
+    const [files, setFiles] = useState<WorkFile[]>([]);
+    const [selectedCategory, setSelectedCategory] = useState<FileCategory | ''>('');
+    const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, id: string | null}>({isOpen: false, id: null});
+    const [uploading, setUploading] = useState(false);
+
+    const loadFiles = () => {
+        setFiles(dbService.getFiles(workId));
+    };
+
+    useEffect(loadFiles, [workId]);
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file && selectedCategory) {
+            // Check size limit (LocalStorage limit is approx 5MB, but CAD files can be big)
+            // Warning user about browser storage limits
+            if (file.size > 5 * 1024 * 1024) { 
+                alert("O arquivo é muito grande (>5MB) para o armazenamento do navegador. Tente reduzir ou use arquivos menores.");
+                return;
+            }
+
+            setUploading(true);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = reader.result as string;
+                dbService.addFile({
+                    workId,
+                    name: file.name,
+                    category: selectedCategory,
+                    url: base64,
+                    type: file.name.split('.').pop()?.toLowerCase() || 'file', // Use extension as type for better detection
+                    date: new Date().toISOString()
+                });
+                setUploading(false);
+                setSelectedCategory(''); // Reset
+                loadFiles();
+            };
+            reader.readAsDataURL(file);
+        } else if (!selectedCategory) {
+            alert("Selecione um tipo de projeto antes de enviar.");
+            e.target.value = ''; // Reset input
+        }
+    };
+
+    const handleDelete = () => {
+        if (confirmModal.id) {
+            dbService.deleteFile(confirmModal.id);
+            setConfirmModal({isOpen: false, id: null});
+            loadFiles();
+        }
+    };
+
+    // Separate files
+    const projectFiles = files.filter(f => f.category !== FileCategory.GENERAL && f.category !== FileCategory.OTHER_PROJECT);
+    const generalFiles = files.filter(f => f.category === FileCategory.GENERAL || f.category === FileCategory.OTHER_PROJECT);
+
+    const getIconForType = (type: string) => {
+        const t = type.toLowerCase();
+        if (t.includes('pdf')) return 'fa-file-pdf';
+        if (t.includes('image') || t === 'png' || t === 'jpg' || t === 'jpeg') return 'fa-file-image';
+        if (t.includes('word') || t.includes('doc')) return 'fa-file-word';
+        if (t.includes('sheet') || t.includes('xls') || t.includes('csv')) return 'fa-file-excel';
+        
+        // CAD & BIM Formats
+        if (t.includes('dwg') || t.includes('dxf')) return 'fa-compass-drafting'; // AutoCAD
+        if (t.includes('rvt') || t.includes('rfa')) return 'fa-cubes'; // Revit
+        if (t.includes('ifc')) return 'fa-sitemap'; // BIM/IFC
+        if (t.includes('pln')) return 'fa-building-columns'; // ArchiCAD
+
+        return 'fa-file';
+    };
+
+    return (
+        <div className="space-y-8">
+            {/* Upload Area */}
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+                <h3 className="font-bold text-text-main dark:text-white mb-4">Adicionar Novo Arquivo</h3>
+                
+                <div className="flex flex-col gap-4">
+                    <div>
+                        <p className="text-sm text-text-muted dark:text-slate-400 mb-2 font-bold uppercase text-xs">1. Selecione o Tipo de Projeto</p>
+                        
+                        {/* SUBSTITUÍDO: De Botões para Select Box */}
+                        <div className="relative">
+                            <select
+                                value={selectedCategory}
+                                onChange={(e) => setSelectedCategory(e.target.value as FileCategory)}
+                                className="w-full md:w-1/2 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm font-medium focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                            >
+                                <option value="">Selecione uma categoria...</option>
+                                {Object.values(FileCategory).map(cat => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 left-0 md:left-auto md:right-1/2 flex items-center px-4 text-text-muted dark:text-slate-400">
+                                <i className="fa-solid fa-chevron-down text-xs"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-sm text-text-muted dark:text-slate-400 mb-2 font-bold uppercase text-xs">2. Faça Upload</p>
+                        <div className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-colors ${selectedCategory ? 'border-primary/30 bg-primary/5 cursor-pointer hover:bg-primary/10' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed opacity-60'}`}>
+                            <input 
+                                type="file" 
+                                // Added support for CAD/BIM files
+                                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.dwg,.ifc,.rvt,.pln"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                                onChange={handleFileUpload}
+                                disabled={!selectedCategory || uploading}
+                            />
+                            {uploading ? (
+                                <div className="flex flex-col items-center text-primary">
+                                    <i className="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i>
+                                    <p className="font-bold">Enviando...</p>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center text-text-muted dark:text-slate-400">
+                                    <i className="fa-solid fa-cloud-arrow-up text-3xl mb-2"></i>
+                                    <p className="font-bold">{selectedCategory ? "Clique ou arraste o arquivo aqui" : "Selecione uma categoria acima primeiro"}</p>
+                                    <p className="text-xs mt-1">PDF, Imagens, Excel, DWG, RVT, IFC, PLN (Max 5MB)</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Section: Project Files */}
+            <div>
+                <h3 className="text-lg font-bold text-text-main dark:text-white mb-4 flex items-center gap-2">
+                    <i className="fa-solid fa-compass-drafting text-secondary"></i> Projetos Técnicos
+                </h3>
+                {projectFiles.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {projectFiles.map(file => (
+                            <div key={file.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-start gap-4 hover:shadow-md transition-shadow group relative">
+                                <div className="w-12 h-12 rounded-lg bg-surface dark:bg-slate-800 flex items-center justify-center shrink-0">
+                                    <i className={`fa-solid ${getIconForType(file.type)} text-2xl text-text-muted dark:text-slate-500`}></i>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold text-primary dark:text-primary-light uppercase mb-0.5">{file.category}</p>
+                                    <h4 className="font-bold text-text-main dark:text-white truncate text-sm" title={file.name}>{file.name}</h4>
+                                    <p className="text-xs text-text-muted dark:text-slate-500 mt-1">{new Date(file.date).toLocaleDateString()}</p>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                     <a href={file.url} download={file.name} className="text-slate-300 hover:text-primary transition-colors" title="Baixar">
+                                        <i className="fa-solid fa-download"></i>
+                                     </a>
+                                     <button onClick={() => setConfirmModal({isOpen: true, id: file.id})} className="text-slate-300 hover:text-danger transition-colors" title="Excluir">
+                                        <i className="fa-solid fa-trash"></i>
+                                     </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-center py-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+                        <p className="text-text-muted dark:text-slate-500">Nenhum projeto técnico (hidráulico, elétrico, etc) adicionado.</p>
+                    </div>
+                )}
+            </div>
+
+            {/* Section: General Files */}
+            <div>
+                 <h3 className="text-lg font-bold text-text-main dark:text-white mb-4 flex items-center gap-2">
+                    <i className="fa-solid fa-folder-open text-warning"></i> Arquivos Gerais
+                </h3>
+                {generalFiles.length > 0 ? (
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {generalFiles.map(file => (
+                            <div key={file.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-start gap-4 hover:shadow-md transition-shadow group relative">
+                                <div className="w-12 h-12 rounded-lg bg-surface dark:bg-slate-800 flex items-center justify-center shrink-0">
+                                    <i className={`fa-solid ${getIconForType(file.type)} text-2xl text-text-muted dark:text-slate-500`}></i>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold text-text-muted dark:text-slate-400 uppercase mb-0.5">{file.category}</p>
+                                    <h4 className="font-bold text-text-main dark:text-white truncate text-sm" title={file.name}>{file.name}</h4>
+                                    <p className="text-xs text-text-muted dark:text-slate-500 mt-1">{new Date(file.date).toLocaleDateString()}</p>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                     <a href={file.url} download={file.name} className="text-slate-300 hover:text-primary transition-colors" title="Baixar">
+                                        <i className="fa-solid fa-download"></i>
+                                     </a>
+                                     <button onClick={() => setConfirmModal({isOpen: true, id: file.id})} className="text-slate-300 hover:text-danger transition-colors" title="Excluir">
+                                        <i className="fa-solid fa-trash"></i>
+                                     </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-center py-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+                        <p className="text-text-muted dark:text-slate-500">Nenhum arquivo geral adicionado.</p>
+                    </div>
+                )}
+            </div>
+
+            <ConfirmModal 
+                isOpen={confirmModal.isOpen}
+                title="Excluir Arquivo"
+                message="Tem certeza que deseja excluir este arquivo permanentemente?"
+                onConfirm={handleDelete}
+                onCancel={() => setConfirmModal({isOpen: false, id: null})}
+            />
+        </div>
+    );
+};
+
 const PhotosTab: React.FC<{ workId: string }> = ({ workId }) => {
     const [photos, setPhotos] = useState<WorkPhoto[]>([]);
     const [filter, setFilter] = useState<'ALL' | 'BEFORE' | 'PROGRESS' | 'AFTER'>('ALL');
@@ -2343,7 +2555,8 @@ const WorkDetail: React.FC = () => {
     { name: 'Etapas', icon: 'fa-list-check' },
     { name: 'Despesas', icon: 'fa-receipt' },
     { name: 'Materiais', icon: 'fa-box-open' },
-    { name: 'Relatórios', icon: 'fa-file-pdf' }, // Reports moved here
+    { name: 'Relatórios', icon: 'fa-file-pdf' },
+    { name: 'Projetos e Arquivos', icon: 'fa-folder-open' }, // Nova aba adicionada
     { name: 'Fotos', icon: 'fa-camera' },
     { name: 'Bônus', icon: 'fa-star' },
   ];
@@ -2443,8 +2656,9 @@ const WorkDetail: React.FC = () => {
         {activeTab === 2 && <ExpensesTab workId={work.id} onUpdate={() => setStats(dbService.calculateWorkStats(work.id))} />}
         {activeTab === 3 && <MaterialsTab workId={work.id} onUpdate={() => setStats(dbService.calculateWorkStats(work.id))} />}
         {activeTab === 4 && <ReportsTab work={work} stats={stats} />}
-        {activeTab === 5 && <PhotosTab workId={work.id} />}
-        {activeTab === 6 && <BonusTab workId={work.id} />}
+        {activeTab === 5 && <FilesTab workId={work.id} />}
+        {activeTab === 6 && <PhotosTab workId={work.id} />}
+        {activeTab === 7 && <BonusTab workId={work.id} />}
       </div>
     </div>
   );

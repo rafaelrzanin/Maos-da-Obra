@@ -1,7 +1,7 @@
 
 
 import { 
-  User, Work, Step, Expense, Material, WorkPhoto, 
+  User, Work, Step, Expense, Material, WorkPhoto, WorkFile,
   PlanType, WorkStatus, StepStatus, Notification
 } from '../types';
 import { STANDARD_PHASES } from './standards';
@@ -17,6 +17,7 @@ interface DbSchema {
   expenses: Expense[];
   materials: Material[];
   photos: WorkPhoto[];
+  files: WorkFile[]; // Adicionado array de arquivos
   notifications: Notification[];
 }
 
@@ -29,6 +30,7 @@ const initialDb: DbSchema = {
   expenses: [],
   materials: [],
   photos: [],
+  files: [], // Inicialização
   notifications: []
 };
 
@@ -39,7 +41,10 @@ const getDb = (): DbSchema => {
     localStorage.setItem(DB_KEY, JSON.stringify(initialDb));
     return initialDb;
   }
-  return JSON.parse(stored);
+  const db = JSON.parse(stored);
+  // Ensure files array exists for migration
+  if (!db.files) db.files = [];
+  return db;
 };
 
 // Helper to save DB
@@ -209,6 +214,7 @@ export const dbService = {
     db.expenses = db.expenses.filter(e => e.workId !== workId);
     db.materials = db.materials.filter(m => m.workId !== workId);
     db.photos = db.photos.filter(p => p.workId !== workId);
+    db.files = db.files.filter(f => f.workId !== workId);
     saveDb(db);
   },
 
@@ -353,6 +359,28 @@ export const dbService = {
   deletePhoto: (id: string) => {
     const db = getDb();
     db.photos = db.photos.filter(p => p.id !== id);
+    saveDb(db);
+  },
+
+  // --- FILES (NEW) ---
+  getFiles: (workId: string): WorkFile[] => {
+    const db = getDb();
+    // Default empty if legacy
+    if (!db.files) return [];
+    return db.files.filter(f => f.workId === workId).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  },
+
+  addFile: (file: Omit<WorkFile, 'id'>) => {
+    const db = getDb();
+    if (!db.files) db.files = [];
+    db.files.push({ ...file, id: Math.random().toString(36).substr(2, 9) });
+    saveDb(db);
+  },
+
+  deleteFile: (id: string) => {
+    const db = getDb();
+    if (!db.files) return;
+    db.files = db.files.filter(f => f.id !== id);
     saveDb(db);
   },
 
