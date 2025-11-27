@@ -571,7 +571,8 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
       workId,
       description: finalDescription,
       amount: Number(newExp.amount),
-      paidAmount: newExp.paidAmount ? Number(newExp.paidAmount) : undefined,
+      // CHANGE: Default paidAmount to 0 if empty/undefined. User must explicitly set it if paid.
+      paidAmount: newExp.paidAmount ? Number(newExp.paidAmount) : 0, 
       quantity: newExp.quantity ? Number(newExp.quantity) : 1,
       category: newExp.category,
       date: newExp.date || new Date().toISOString().split('T')[0]
@@ -615,7 +616,8 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
   const handleEditClick = (exp: Expense, e: React.MouseEvent) => {
       e.stopPropagation();
       setEditingId(exp.id);
-      setEditData({ ...exp });
+      // Ensure paidAmount is properly set to 0 if undefined during edit
+      setEditData({ ...exp, paidAmount: exp.paidAmount ?? 0 });
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
@@ -637,7 +639,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
   };
 
   const getPaymentStatus = (exp: Expense) => {
-      const paid = exp.paidAmount ?? exp.amount;
+      const paid = exp.paidAmount ?? 0; // Default to 0 for status check
       if (paid >= exp.amount) return { label: 'PAGO', color: 'bg-success-light text-success-dark dark:bg-green-900/50 dark:text-green-200' };
       if (paid > 0) return { label: 'PARCIAL', color: 'bg-warning-light text-warning-dark dark:bg-yellow-900/50 dark:text-yellow-200' };
       return { label: 'PENDENTE', color: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300' };
@@ -750,7 +752,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                  <span className="absolute left-4 top-9 text-text-muted dark:text-slate-500 text-sm">R$</span>
                  <input 
                     type="number" 
-                    placeholder="Se vazio = Total" 
+                    placeholder="0,00 (Se vazio = 0)" 
                     value={newExp.paidAmount}
                     onChange={e => setNewExp({...newExp, paidAmount: e.target.value})}
                     className="w-full pl-10 pr-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
@@ -770,7 +772,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 print:grid-cols-2 print:gap-4">
         {expenses.map(exp => {
             const status = getPaymentStatus(exp);
-            const paidVal = exp.paidAmount ?? exp.amount;
+            const paidVal = exp.paidAmount ?? 0;
             const progress = Math.min((paidVal / exp.amount) * 100, 100);
 
             return (
@@ -884,7 +886,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                             <input 
                                 type="number"
                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
-                                value={editData.paidAmount !== undefined ? editData.paidAmount : editData.amount}
+                                value={editData.paidAmount !== undefined ? editData.paidAmount : 0}
                                 onChange={e => setEditData({...editData, paidAmount: Number(e.target.value)})}
                                 required
                             />
@@ -892,7 +894,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                       </div>
 
                        {/* Remaining Calculation Visual Aid */}
-                       {editData.amount !== undefined && (editData.paidAmount !== undefined ? editData.paidAmount : editData.amount) < editData.amount && (
+                       {editData.amount !== undefined && (editData.paidAmount !== undefined ? editData.paidAmount : 0) < editData.amount && (
                            <div className="p-3 bg-warning-light/30 border border-warning/30 rounded-lg text-center">
                                <p className="text-xs text-text-muted dark:text-slate-400 uppercase font-bold">Restante a Pagar</p>
                                <p className="text-lg font-bold text-warning-dark dark:text-yellow-400">
