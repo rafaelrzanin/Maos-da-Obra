@@ -155,6 +155,7 @@ export interface Collaborator {
   phone: string;
   costType: 'DIARIA' | 'EMPREITA' | 'MENSAL';
   costValue: number;
+  stepId?: string; // Vínculo com etapa
 }
 
 export enum SupplierCategory {
