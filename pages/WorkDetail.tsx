@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db';
@@ -1481,6 +1479,10 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
 };
 
 const ReportsTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
+  const [stepFilter, setStepFilter] = useState('ALL');
+  const materials = dbService.getMaterials(work.id);
+  const steps = dbService.getSteps(work.id);
+
   const downloadCSV = (data: any[], filename: string) => {
       const headers = Object.keys(data[0]).join(',');
       const rows = data.map(obj => Object.values(obj).map(v => `"${v}"`).join(',')).join('\n');
@@ -1517,7 +1519,24 @@ const ReportsTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
       else alert("Não há materiais para exportar.");
   };
 
-  const materials = dbService.getMaterials(work.id);
+  const filteredMaterials = materials.filter(m => stepFilter === 'ALL' || m.stepId === stepFilter);
+
+  const exportDetailedMaterials = () => {
+        const data = filteredMaterials.map(m => {
+            const stepName = steps.find(s => s.id === m.stepId)?.name || 'Geral / Sem Etapa';
+            return {
+                Material: m.name,
+                Etapa: stepName,
+                Planejado: m.plannedQty,
+                Comprado: m.purchasedQty,
+                Pendente: Math.max(0, m.plannedQty - m.purchasedQty),
+                Unidade: m.unit
+            };
+        });
+        if (data.length > 0) downloadCSV(data, `materiais_detalhado_${work.name.replace(/\s+/g, '_')}.csv`);
+        else alert("Não há dados para exportar.");
+  };
+
   const missingMaterials = materials.filter(m => m.purchasedQty < m.plannedQty).length;
 
   return (
@@ -1621,6 +1640,70 @@ const ReportsTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
                         {stats.delayedSteps > 0 ? `${stats.delayedSteps} etapas atrasadas` : 'Cronograma em dia'}
                     </p>
                 </div>
+            </div>
+        </div>
+
+        {/* --- NOVO: RELATÓRIO DETALHADO DE MATERIAIS POR ETAPA --- */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-8 shadow-sm print:shadow-none print:border-slate-300 print:break-inside-avoid">
+             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <div>
+                    <h3 className="text-lg font-bold text-text-main dark:text-white flex items-center gap-2">
+                        <i className="fa-solid fa-list-check text-secondary"></i> Detalhamento de Materiais
+                    </h3>
+                    <p className="text-sm text-text-muted dark:text-slate-400">Controle de insumos por etapa.</p>
+                </div>
+                <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto print:hidden">
+                    <select 
+                        className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none text-text-main dark:text-white"
+                        value={stepFilter}
+                        onChange={(e) => setStepFilter(e.target.value)}
+                    >
+                        <option value="ALL">Todas as Etapas</option>
+                        {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <button onClick={exportDetailedMaterials} className="bg-surface hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-text-main dark:text-white px-4 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap">
+                        <i className="fa-solid fa-file-excel mr-1"></i> Baixar Tabela
+                    </button>
+                </div>
+            </div>
+
+            <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700">
+                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase">Material</th>
+                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase">Etapa</th>
+                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase text-right">Planejado</th>
+                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase text-right">Comprado</th>
+                            <th className="py-3 px-2 text-xs font-bold text-text-muted dark:text-slate-500 uppercase text-right">Pendente</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredMaterials.map(m => {
+                            const stepName = steps.find(s => s.id === m.stepId)?.name || '-';
+                            const pending = Math.max(0, m.plannedQty - m.purchasedQty);
+                            
+                            return (
+                                <tr key={m.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                    <td className="py-3 px-2 text-sm text-text-main dark:text-white font-medium">{m.name}</td>
+                                    <td className="py-3 px-2 text-xs text-text-muted dark:text-slate-400">{stepName}</td>
+                                    <td className="py-3 px-2 text-sm text-text-body dark:text-slate-300 text-right">{m.plannedQty} {m.unit}</td>
+                                    <td className="py-3 px-2 text-sm text-text-body dark:text-slate-300 text-right">{m.purchasedQty} {m.unit}</td>
+                                    <td className={`py-3 px-2 text-sm font-bold text-right ${pending > 0 ? 'text-danger' : 'text-success'}`}>
+                                        {pending} {m.unit}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {filteredMaterials.length === 0 && (
+                            <tr>
+                                <td colSpan={5} className="py-8 text-center text-text-muted dark:text-slate-400 italic">
+                                    Nenhum material encontrado para esta seleção.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
