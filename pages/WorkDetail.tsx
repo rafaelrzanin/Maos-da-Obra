@@ -85,7 +85,8 @@ const OverallProgressDonut: React.FC<{ progress: number }> = ({ progress }) => {
 
 // --- TABS ---
 
-const OverviewTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
+// Modified OverviewTab to accept onGoToSteps prop
+const OverviewTab: React.FC<{ work: Work, stats: any, onGoToSteps: () => void }> = ({ work, stats, onGoToSteps }) => {
   const budgetUsage = work.budgetPlanned > 0 ? (stats.totalSpent / work.budgetPlanned) * 100 : 0;
   
   // Data for PieChart (Expenses)
@@ -198,13 +199,25 @@ const OverviewTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
             {budgetUsage.toFixed(1)}%
           </p>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm text-center relative overflow-hidden transition-colors print:border print:border-slate-300">
-          <div className={`absolute top-0 left-0 w-full h-1 ${stats.delayedSteps > 0 ? 'bg-success' : 'bg-success'}`}></div>
+        
+        {/* CARD DE ATRASOS - CLICÁVEL */}
+        <div 
+          onClick={() => {
+              if (stats.delayedSteps > 0) onGoToSteps();
+          }}
+          className={`bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm text-center relative overflow-hidden transition-all print:border print:border-slate-300 ${stats.delayedSteps > 0 ? 'cursor-pointer hover:shadow-md hover:bg-slate-50 dark:hover:bg-slate-800' : ''}`}
+        >
+          <div className={`absolute top-0 left-0 w-full h-1 ${stats.delayedSteps > 0 ? 'bg-danger' : 'bg-success'}`}></div>
           <p className="text-text-muted dark:text-slate-400 text-xs uppercase font-bold tracking-wider mb-2">Atrasos</p>
-          <p className={`text-2xl lg:text-3xl font-bold ${stats.delayedSteps > 0 ? 'text-danger' : 'text-success'}`}>
-            {stats.delayedSteps}
-          </p>
+          <div className="flex items-center justify-center gap-2">
+            <p className={`text-2xl lg:text-3xl font-bold ${stats.delayedSteps > 0 ? 'text-danger' : 'text-success'}`}>
+                {stats.delayedSteps}
+            </p>
+            {stats.delayedSteps > 0 && <i className="fa-solid fa-chevron-right text-danger text-sm animate-pulse"></i>}
+          </div>
+          {stats.delayedSteps > 0 && <p className="text-[10px] text-danger mt-1">Clique para ver</p>}
         </div>
+
         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm text-center relative overflow-hidden transition-colors print:border print:border-slate-300">
             <div className="absolute top-0 left-0 w-full h-1 bg-warning"></div>
             <p className="text-text-muted dark:text-slate-400 text-xs uppercase font-bold tracking-wider mb-2">Fim Previsto</p>
@@ -261,10 +274,6 @@ const StepsTab: React.FC<{ workId: string, refreshWork: () => void }> = ({ workI
         return idxA - idxB;
     });
     setSortedPhaseNames(sortedKeys);
-
-    if (Object.keys(expandedPhases).length === 0 && sortedKeys.length > 0) {
-        setExpandedPhases({ [sortedKeys[0]]: true });
-    }
   };
 
   useEffect(loadSteps, [workId]);
@@ -1989,7 +1998,8 @@ const WorkDetail: React.FC = () => {
 
       {/* Tab Content */}
       <div className="min-h-[500px] print:min-h-0">
-        {activeTab === 0 && <OverviewTab work={work} stats={stats} />}
+        {/* Passamos onGoToSteps para o OverviewTab, mudando para a aba 1 (Etapas) */}
+        {activeTab === 0 && <OverviewTab work={work} stats={stats} onGoToSteps={() => setActiveTab(1)} />}
         {activeTab === 1 && <StepsTab workId={work.id} refreshWork={loadWork} />}
         {activeTab === 2 && <ExpensesTab workId={work.id} onUpdate={() => setStats(dbService.calculateWorkStats(work.id))} />}
         {activeTab === 3 && <MaterialsTab workId={work.id} onUpdate={() => setStats(dbService.calculateWorkStats(work.id))} />}
