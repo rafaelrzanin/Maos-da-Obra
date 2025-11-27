@@ -333,20 +333,55 @@ const StepsTab: React.FC<{ workId: string, refreshWork: () => void }> = ({ workI
           const progress = calculatePhaseProgress(phaseSteps);
           const isExpanded = expandedPhases[phase];
           const isComplete = progress === 100;
+          
+          // VERIFICA SE HÁ ATRASO NA FASE (Qualquer etapa atrasada)
+          const now = new Date();
+          const hasPhaseDelay = phaseSteps.some(step => 
+              step.status !== StepStatus.COMPLETED && new Date(step.endDate) < now
+          );
+
+          // DEFINIR CORES DO INDICADOR BASEADO NO STATUS
+          let indicatorClasses = "";
+          let titleClasses = "text-text-main dark:text-white";
+          let iconContent = null;
+
+          if (isComplete) {
+              // 100% Concluído: Verde Sólido + Check
+              indicatorClasses = "bg-success text-white border-transparent";
+              titleClasses = "text-success";
+              iconContent = <i className="fa-solid fa-check"></i>;
+          } else if (hasPhaseDelay) {
+              // Atrasado: Borda Vermelha + Texto Vermelho
+              indicatorClasses = "bg-white dark:bg-slate-900 text-danger border-2 border-danger";
+              titleClasses = "text-danger";
+              iconContent = `${progress}%`;
+          } else if (progress > 0) {
+              // Em andamento (No prazo): Borda Verde + Texto Verde
+              indicatorClasses = "bg-white dark:bg-slate-900 text-success border-2 border-success";
+              titleClasses = "text-success";
+              iconContent = `${progress}%`;
+          } else {
+              // Não iniciado: Padrão Cinza
+              indicatorClasses = "bg-surface dark:bg-slate-800 text-text-body dark:text-slate-400 border border-slate-200 dark:border-slate-700";
+              iconContent = `${progress}%`;
+          }
 
           return (
-            <div key={phase} className={`relative z-10 bg-white dark:bg-slate-900 rounded-2xl border transition-all ${isComplete ? 'border-success/30' : 'border-slate-100 dark:border-slate-800'}`}>
+            <div key={phase} className={`relative z-10 bg-white dark:bg-slate-900 rounded-2xl border transition-all ${isComplete ? 'border-success/30' : (hasPhaseDelay ? 'border-danger/30' : 'border-slate-100 dark:border-slate-800')}`}>
                <button 
                  onClick={() => togglePhase(phase)}
                  className="w-full flex items-center justify-between p-5 focus:outline-none"
                >
                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm transition-colors ${isComplete ? 'bg-success text-white' : 'bg-surface dark:bg-slate-800 text-text-body dark:text-slate-400 border border-slate-200 dark:border-slate-700'}`}>
-                        {isComplete ? <i className="fa-solid fa-check"></i> : `${progress}%`}
+                    {/* Indicador Visual da Fase */}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm transition-colors ${indicatorClasses}`}>
+                        {iconContent}
                     </div>
                     <div className="text-left">
-                        <h4 className={`font-bold text-lg ${isComplete ? 'text-success' : 'text-text-main dark:text-white'}`}>{phase}</h4>
-                        <p className="text-xs text-text-muted dark:text-slate-500">{phaseSteps.length} atividades</p>
+                        <h4 className={`font-bold text-lg ${titleClasses}`}>{phase}</h4>
+                        <p className={`text-xs ${hasPhaseDelay ? 'text-danger font-bold' : 'text-text-muted dark:text-slate-500'}`}>
+                            {hasPhaseDelay ? 'Fase com atrasos!' : `${phaseSteps.length} atividades`}
+                        </p>
                     </div>
                  </div>
                  <i className={`fa-solid fa-chevron-down text-text-muted transition-transform ${isExpanded ? 'rotate-180' : ''}`}></i>
