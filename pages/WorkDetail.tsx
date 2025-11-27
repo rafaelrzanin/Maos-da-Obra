@@ -1644,12 +1644,15 @@ const PhotosTab: React.FC<{ workId: string }> = ({ workId }) => {
 // --- BONUS TAB (Calculadoras & Checklist) ---
 
 const BonusTab: React.FC<{ workId: string }> = ({ workId }) => {
-  const [subTab, setSubTab] = useState<'CALC' | 'CHECK'>('CALC');
+  const [subTab, setSubTab] = useState<'CALC' | 'CHECK' | 'CONTRACT'>('CALC');
   
   // State for Calculators
   const [calcType, setCalcType] = useState<'FLOOR' | 'BRICK' | 'PAINT'>('FLOOR');
   const [inputs, setInputs] = useState<any>({});
   const [result, setResult] = useState<any>(null);
+
+  // State for Contracts
+  const [contractType, setContractType] = useState<'EMPREITA' | 'DIARIA' | 'RECIBO'>('EMPREITA');
 
   // State for Checklist (Persisted in LocalStorage for MVP)
   const [checklist, setChecklist] = useState<Record<string, boolean>>({});
@@ -1702,6 +1705,76 @@ const BonusTab: React.FC<{ workId: string }> = ({ workId }) => {
       setResult(res);
   }
 
+  const CONTRACT_MODELS = {
+      EMPREITA: `CONTRATO DE PRESTAÇÃO DE SERVIÇOS (EMPREITADA)
+
+Pelo presente instrumento particular, de um lado [NOME DO CONTRATANTE], inscrito no CPF sob nº [CPF], denominado CONTRATANTE, e de outro lado [NOME DO PROFISSIONAL], inscrito no CPF sob nº [CPF], denominado CONTRATADO.
+
+1. DO OBJETO
+O CONTRATADO obriga-se a realizar a execução dos serviços de [DESCREVER O SERVIÇO, EX: REFORMA DO BANHEIRO], no endereço [ENDEREÇO DA OBRA].
+
+2. DO PRAZO
+Os serviços terão início em [DATA INÍCIO] e previsão de término em [DATA FIM].
+
+3. DO PREÇO E FORMA DE PAGAMENTO
+Pela execução dos serviços, o CONTRATANTE pagará ao CONTRATADO o valor total de R$ [VALOR TOTAL], a ser pago da seguinte forma:
+- [EX: 30% na entrada]
+- [EX: 30% na metade da obra]
+- [EX: 40% na entrega final]
+
+4. DAS OBRIGAÇÕES
+Caberá ao CONTRATANTE fornecer os materiais necessários.
+Caberá ao CONTRATADO executar os serviços com zelo e técnica adequada, respeitando as normas de segurança.
+
+Local e Data: ______________________, ___/___/___
+
+___________________________      ___________________________
+Assinatura Contratante            Assinatura Contratado`,
+      DIARIA: `CONTRATO DE PRESTAÇÃO DE SERVIÇOS (DIÁRIA)
+
+Pelo presente instrumento, acordam as partes:
+
+CONTRATANTE: [NOME DO CONTRATANTE], CPF [CPF].
+CONTRATADO: [NOME DO PROFISSIONAL], CPF [CPF].
+
+1. OBJETO
+Prestação de serviços de [TIPO DE SERVIÇO: EX: PINTURA/ALVENARIA] no regime de diárias.
+
+2. DO VALOR
+O valor acordado por dia de trabalho (diária) é de R$ [VALOR DA DIÁRIA].
+O pagamento será realizado [EX: SEMANALMENTE ÀS SEXTAS-FEIRAS].
+
+3. DA JORNADA
+O horário de trabalho será das [HORÁRIO INÍCIO] às [HORÁRIO FIM], com [TEMPO] de intervalo para almoço.
+
+4. ALIMENTAÇÃO E TRANSPORTE
+Fica acordado que a alimentação e o transporte [SERÃO/NÃO SERÃO] fornecidos pelo CONTRATANTE.
+
+Local e Data: ______________________, ___/___/___
+
+___________________________      ___________________________
+Assinatura Contratante            Assinatura Contratado`,
+      RECIBO: `RECIBO DE PAGAMENTO
+
+Valor: R$ [VALOR PAGO]
+
+Recebi de [NOME DO CONTRATANTE] a importância supra de [VALOR POR EXTENSO], referente aos serviços de [DESCRIÇÃO DO SERVIÇO] prestados no período de [DATA INICIAL] a [DATA FINAL].
+
+Por ser verdade, firmo o presente recibo dando plena e geral quitação.
+
+Local e Data: ______________________, ___/___/___
+
+___________________________
+[NOME DO PROFISSIONAL]
+CPF: [CPF]`
+  };
+
+  const handleCopyContract = () => {
+      const text = CONTRACT_MODELS[contractType];
+      navigator.clipboard.writeText(text);
+      alert("Texto copiado para a área de transferência!");
+  };
+
   const RENOVATION_CHECKLIST = [
       { category: 'Planejamento', items: ['Definir orçamento limite', 'Contratar arquiteto/engenheiro', 'Aprovar projeto na prefeitura', 'Definir cronograma', 'Cotar mão de obra'] },
       { category: 'Preliminares', items: ['Ligação provisória de água/luz', 'Alugar caçamba', 'Comprar EPIs', 'Proteger áreas que não serão reformadas'] },
@@ -1714,18 +1787,24 @@ const BonusTab: React.FC<{ workId: string }> = ({ workId }) => {
   return (
     <div className="space-y-6">
         {/* Toggle Subtabs */}
-        <div className="flex bg-surface dark:bg-slate-800 p-1 rounded-xl w-full md:w-fit">
+        <div className="flex bg-surface dark:bg-slate-800 p-1 rounded-xl w-full md:w-fit overflow-x-auto">
             <button 
                 onClick={() => setSubTab('CALC')}
-                className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${subTab === 'CALC' ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' : 'text-text-muted dark:text-slate-400'}`}
+                className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${subTab === 'CALC' ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' : 'text-text-muted dark:text-slate-400'}`}
             >
                 Calculadoras
             </button>
             <button 
                 onClick={() => setSubTab('CHECK')}
-                className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${subTab === 'CHECK' ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' : 'text-text-muted dark:text-slate-400'}`}
+                className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${subTab === 'CHECK' ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' : 'text-text-muted dark:text-slate-400'}`}
             >
                 Checklist
+            </button>
+            <button 
+                onClick={() => setSubTab('CONTRACT')}
+                className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${subTab === 'CONTRACT' ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' : 'text-text-muted dark:text-slate-400'}`}
+            >
+                Contratos
             </button>
         </div>
 
@@ -1865,6 +1944,55 @@ const BonusTab: React.FC<{ workId: string }> = ({ workId }) => {
                         </div>
                     </div>
                 ))}
+            </div>
+        )}
+
+        {subTab === 'CONTRACT' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 {/* Menu Contratos */}
+                 <div className="md:col-span-1 space-y-2">
+                    <button onClick={() => setContractType('EMPREITA')} className={`w-full p-4 rounded-xl text-left font-bold border transition-all ${contractType === 'EMPREITA' ? 'bg-primary text-white border-primary' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-text-muted dark:text-slate-400'}`}>
+                        <i className="fa-solid fa-file-contract mr-2"></i> Contrato por Empreitada
+                    </button>
+                    <button onClick={() => setContractType('DIARIA')} className={`w-full p-4 rounded-xl text-left font-bold border transition-all ${contractType === 'DIARIA' ? 'bg-primary text-white border-primary' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-text-muted dark:text-slate-400'}`}>
+                        <i className="fa-solid fa-calendar-day mr-2"></i> Contrato por Diária
+                    </button>
+                    <button onClick={() => setContractType('RECIBO')} className={`w-full p-4 rounded-xl text-left font-bold border transition-all ${contractType === 'RECIBO' ? 'bg-primary text-white border-primary' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-text-muted dark:text-slate-400'}`}>
+                        <i className="fa-solid fa-money-check-dollar mr-2"></i> Recibo de Pagamento
+                    </button>
+                </div>
+
+                {/* Visualização e Ações */}
+                <div className="md:col-span-2 space-y-4">
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-text-main dark:text-white">Modelo de Documento</h3>
+                            <span className="text-xs bg-warning-light text-warning-dark px-2 py-1 rounded">Apenas sugestão</span>
+                        </div>
+                        <textarea 
+                            className="w-full h-[400px] p-4 bg-surface dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-mono text-text-body dark:text-slate-300 focus:outline-none resize-none"
+                            readOnly
+                            value={CONTRACT_MODELS[contractType]}
+                        ></textarea>
+                        
+                        <div className="flex gap-4 mt-4">
+                            <button 
+                                onClick={handleCopyContract}
+                                className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-xl transition-all shadow-md shadow-primary/20 flex items-center justify-center gap-2"
+                            >
+                                <i className="fa-regular fa-copy"></i> Copiar Texto
+                            </button>
+                            {/* Dica para preenchimento */}
+                            <div className="flex-1 flex items-center justify-center text-xs text-text-muted dark:text-slate-500 text-center px-2">
+                                Copie e cole no WhatsApp ou Word para preencher os dados.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <p className="text-xs text-text-muted dark:text-slate-500 italic text-center">
+                        * Aviso Legal: Estes modelos são sugestões básicas. Para contratos complexos, consulte um advogado.
+                    </p>
+                </div>
             </div>
         )}
     </div>
