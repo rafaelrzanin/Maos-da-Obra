@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db';
-import { Work, Step, Expense, Material, WorkPhoto, StepStatus, ExpenseCategory, WorkStatus, FileCategory, WorkFile } from '../types';
+import { Work, Step, Expense, Material, WorkPhoto, StepStatus, ExpenseCategory, WorkStatus, FileCategory, WorkFile, Collaborator, Supplier, CollaboratorRole, SupplierCategory } from '../types';
 import { Recharts } from '../components/RechartsWrapper';
 import { STANDARD_MATERIAL_CATALOG, STANDARD_PHASES, STANDARD_EXPENSE_CATALOG } from '../services/standards';
 
@@ -2164,6 +2164,275 @@ const PhotosTab: React.FC<{ workId: string }> = ({ workId }) => {
     );
 };
 
+// --- TEAM & SUPPLIERS TAB ---
+
+const TeamTab: React.FC<{ workId: string }> = ({ workId }) => {
+    const [subTab, setSubTab] = useState<'TEAM' | 'SUPPLIER'>('TEAM');
+    const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+    const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, id: string | null, type: 'TEAM'|'SUPPLIER'|null}>({isOpen: false, id: null, type: null});
+
+    // Forms
+    const [newCollab, setNewCollab] = useState({ name: '', role: '', phone: '', costType: 'DIARIA', costValue: '' });
+    const [newSupplier, setNewSupplier] = useState({ name: '', category: '', contactName: '', phone: '', email: '' });
+
+    const loadData = () => {
+        setCollaborators(dbService.getCollaborators(workId));
+        setSuppliers(dbService.getSuppliers(workId));
+    }
+
+    useEffect(loadData, [workId]);
+
+    const handleAddCollaborator = (e: React.FormEvent) => {
+        e.preventDefault();
+        dbService.addCollaborator({
+            workId,
+            name: newCollab.name,
+            role: newCollab.role as CollaboratorRole,
+            phone: newCollab.phone,
+            costType: newCollab.costType as any,
+            costValue: Number(newCollab.costValue)
+        });
+        setNewCollab({ name: '', role: '', phone: '', costType: 'DIARIA', costValue: '' });
+        loadData();
+    }
+
+    const handleAddSupplier = (e: React.FormEvent) => {
+        e.preventDefault();
+        dbService.addSupplier({
+            workId,
+            name: newSupplier.name,
+            category: newSupplier.category as SupplierCategory,
+            contactName: newSupplier.contactName,
+            phone: newSupplier.phone,
+            email: newSupplier.email
+        });
+        setNewSupplier({ name: '', category: '', contactName: '', phone: '', email: '' });
+        loadData();
+    }
+
+    const handleDelete = () => {
+        if (confirmModal.id && confirmModal.type) {
+            if (confirmModal.type === 'TEAM') dbService.deleteCollaborator(confirmModal.id);
+            else dbService.deleteSupplier(confirmModal.id);
+            
+            setConfirmModal({isOpen: false, id: null, type: null});
+            loadData();
+        }
+    }
+
+    return (
+        <div className="space-y-6">
+             <div className="flex bg-surface dark:bg-slate-800 p-1 rounded-xl w-full md:w-fit">
+                <button 
+                    onClick={() => setSubTab('TEAM')}
+                    className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${subTab === 'TEAM' ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' : 'text-text-muted dark:text-slate-400'}`}
+                >
+                    Colaboradores
+                </button>
+                <button 
+                    onClick={() => setSubTab('SUPPLIER')}
+                    className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${subTab === 'SUPPLIER' ? 'bg-white dark:bg-slate-700 text-primary dark:text-white shadow-sm' : 'text-text-muted dark:text-slate-400'}`}
+                >
+                    Fornecedores
+                </button>
+            </div>
+
+            {subTab === 'TEAM' && (
+                <div className="space-y-6">
+                    {/* ADD FORM */}
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                        <h3 className="font-bold text-text-main dark:text-white mb-4">Adicionar Colaborador</h3>
+                        <form onSubmit={handleAddCollaborator} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                            <input 
+                                placeholder="Nome Completo"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newCollab.name}
+                                onChange={e => setNewCollab({...newCollab, name: e.target.value})}
+                                required
+                            />
+                             <select 
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newCollab.role}
+                                onChange={e => setNewCollab({...newCollab, role: e.target.value})}
+                                required
+                            >
+                                <option value="">Função</option>
+                                {Object.values(CollaboratorRole).map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                            <input 
+                                placeholder="Telefone / Zap"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newCollab.phone}
+                                onChange={e => setNewCollab({...newCollab, phone: e.target.value})}
+                                required
+                            />
+                            <div className="flex gap-2">
+                                <select 
+                                    className="w-1/2 px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                    value={newCollab.costType}
+                                    onChange={e => setNewCollab({...newCollab, costType: e.target.value})}
+                                >
+                                    <option value="DIARIA">Diária</option>
+                                    <option value="EMPREITA">Empreita</option>
+                                    <option value="MENSAL">Mensal</option>
+                                </select>
+                                <input 
+                                    type="number"
+                                    placeholder="Valor"
+                                    className="w-1/2 px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                    value={newCollab.costValue}
+                                    onChange={e => setNewCollab({...newCollab, costValue: e.target.value})}
+                                    required
+                                />
+                            </div>
+                            <button type="submit" className="bg-primary hover:bg-primary-dark text-white font-bold rounded-xl py-2">
+                                Adicionar
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* LIST */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {collaborators.map(collab => (
+                            <div key={collab.id} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all">
+                                 <button 
+                                    onClick={() => setConfirmModal({isOpen: true, id: collab.id, type: 'TEAM'})}
+                                    className="absolute top-4 right-4 text-slate-300 hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <i className="fa-solid fa-trash"></i>
+                                </button>
+                                
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold">
+                                        {collab.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-text-main dark:text-white">{collab.name}</h4>
+                                        <span className="text-xs bg-surface dark:bg-slate-800 text-text-muted dark:text-slate-400 px-2 py-0.5 rounded">{collab.role}</span>
+                                    </div>
+                                </div>
+                                <div className="space-y-2 text-sm text-text-body dark:text-slate-300">
+                                    <p className="flex items-center gap-2">
+                                        <i className="fa-solid fa-phone text-slate-400 text-xs"></i> 
+                                        {collab.phone}
+                                    </p>
+                                    <p className="flex items-center gap-2">
+                                        <i className="fa-solid fa-money-bill text-success text-xs"></i> 
+                                        R$ {collab.costValue.toLocaleString()} / {collab.costType.toLowerCase()}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50 dark:border-slate-800">
+                                    <a href={`tel:${collab.phone}`} className="flex-1 bg-surface hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-text-main dark:text-white text-xs font-bold py-2 rounded-lg text-center transition-colors">
+                                        Ligar
+                                    </a>
+                                    <a href={`https://wa.me/55${collab.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 rounded-lg text-center transition-colors">
+                                        WhatsApp
+                                    </a>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {subTab === 'SUPPLIER' && (
+                <div className="space-y-6">
+                    {/* ADD FORM */}
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                        <h3 className="font-bold text-text-main dark:text-white mb-4">Adicionar Fornecedor</h3>
+                        <form onSubmit={handleAddSupplier} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                            <input 
+                                placeholder="Nome da Loja/Empresa"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newSupplier.name}
+                                onChange={e => setNewSupplier({...newSupplier, name: e.target.value})}
+                                required
+                            />
+                             <select 
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newSupplier.category}
+                                onChange={e => setNewSupplier({...newSupplier, category: e.target.value})}
+                                required
+                            >
+                                <option value="">Categoria</option>
+                                {Object.values(SupplierCategory).map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <input 
+                                placeholder="Nome do Contato"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newSupplier.contactName}
+                                onChange={e => setNewSupplier({...newSupplier, contactName: e.target.value})}
+                                required
+                            />
+                            <input 
+                                placeholder="Telefone / Zap"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                                value={newSupplier.phone}
+                                onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})}
+                                required
+                            />
+                            <button type="submit" className="bg-primary hover:bg-primary-dark text-white font-bold rounded-xl py-2">
+                                Adicionar
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* LIST */}
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {suppliers.map(sup => (
+                            <div key={sup.id} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all">
+                                 <button 
+                                    onClick={() => setConfirmModal({isOpen: true, id: sup.id, type: 'SUPPLIER'})}
+                                    className="absolute top-4 right-4 text-slate-300 hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <i className="fa-solid fa-trash"></i>
+                                </button>
+                                
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="w-10 h-10 rounded-full bg-warning/10 text-warning flex items-center justify-center font-bold">
+                                        <i className="fa-solid fa-store"></i>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-text-main dark:text-white truncate max-w-[150px]">{sup.name}</h4>
+                                        <span className="text-xs bg-surface dark:bg-slate-800 text-text-muted dark:text-slate-400 px-2 py-0.5 rounded">{sup.category}</span>
+                                    </div>
+                                </div>
+                                <div className="space-y-2 text-sm text-text-body dark:text-slate-300">
+                                    <p className="flex items-center gap-2">
+                                        <i className="fa-regular fa-user text-slate-400 text-xs"></i> 
+                                        {sup.contactName}
+                                    </p>
+                                    <p className="flex items-center gap-2">
+                                        <i className="fa-solid fa-phone text-slate-400 text-xs"></i> 
+                                        {sup.phone}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50 dark:border-slate-800">
+                                    <a href={`tel:${sup.phone}`} className="flex-1 bg-surface hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-text-main dark:text-white text-xs font-bold py-2 rounded-lg text-center transition-colors">
+                                        Ligar
+                                    </a>
+                                    <a href={`https://wa.me/55${sup.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 rounded-lg text-center transition-colors">
+                                        WhatsApp
+                                    </a>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+            
+            <ConfirmModal 
+                isOpen={confirmModal.isOpen}
+                title={`Excluir ${confirmModal.type === 'TEAM' ? 'Colaborador' : 'Fornecedor'}`}
+                message="Tem certeza que deseja excluir? Essa ação não pode ser desfeita."
+                onConfirm={handleDelete}
+                onCancel={() => setConfirmModal({isOpen: false, id: null, type: null})}
+            />
+        </div>
+    );
+};
+
 // --- BONUS TAB (Calculadoras & Checklist) ---
 
 const BonusTab: React.FC<{ workId: string }> = ({ workId }) => {
@@ -2556,7 +2825,8 @@ const WorkDetail: React.FC = () => {
     { name: 'Despesas', icon: 'fa-receipt' },
     { name: 'Materiais', icon: 'fa-box-open' },
     { name: 'Relatórios', icon: 'fa-file-pdf' },
-    { name: 'Projetos e Arquivos', icon: 'fa-folder-open' }, // Nova aba adicionada
+    { name: 'Projetos e Arquivos', icon: 'fa-folder-open' },
+    { name: 'Equipe e Fornecedores', icon: 'fa-users' }, // Nova aba adicionada
     { name: 'Fotos', icon: 'fa-camera' },
     { name: 'Bônus', icon: 'fa-star' },
   ];
@@ -2657,8 +2927,9 @@ const WorkDetail: React.FC = () => {
         {activeTab === 3 && <MaterialsTab workId={work.id} onUpdate={() => setStats(dbService.calculateWorkStats(work.id))} />}
         {activeTab === 4 && <ReportsTab work={work} stats={stats} />}
         {activeTab === 5 && <FilesTab workId={work.id} />}
-        {activeTab === 6 && <PhotosTab workId={work.id} />}
-        {activeTab === 7 && <BonusTab workId={work.id} />}
+        {activeTab === 6 && <TeamTab workId={work.id} />} 
+        {activeTab === 7 && <PhotosTab workId={work.id} />}
+        {activeTab === 8 && <BonusTab workId={work.id} />}
       </div>
     </div>
   );
