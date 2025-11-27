@@ -211,3 +211,30 @@ export const STANDARD_MATERIAL_CATALOG: MaterialCatalog = {
       'Pintura': ['Tinta Acrílica', 'Massa Corrida', 'Selador']
   }
 };
+
+export const STANDARD_EXPENSE_CATALOG: MaterialCatalog = {
+  'Mão de Obra': {
+    'Pedreiro': ['Diária', 'Empreitada', 'Metro quadrado'],
+    'Ajudante': ['Diária', 'Semana'],
+    'Eletricista': ['Ponto', 'Diária', 'Empreitada'],
+    'Encanador': ['Ponto', 'Diária', 'Empreitada'],
+    'Pintor': ['Metro quadrado', 'Diária', 'Empreitada'],
+    'Mestre de Obras': ['Mensal', 'Semanal'],
+    'Arquiteto/Engenheiro': ['Projeto', 'Visita Técnica', 'Acompanhamento']
+  },
+  'Taxas e Projetos': {
+    'Prefeitura': ['Alvará', 'Habite-se', 'Taxas diversas'],
+    'Projetos': ['Arquitetônico', 'Estrutural', 'Elétrico', 'Hidráulico', 'Interiores'],
+    'Cartório': ['Registro', 'Averbação', 'Taxas']
+  },
+  'Equipamentos': {
+    'Aluguel': ['Betoneira', 'Andaime', 'Martelete', 'Compactador'],
+    'Compra': ['Ferramentas manuais', 'EPIs']
+  },
+  'Material': {
+    'Básico': ['Cimento', 'Areia', 'Pedra', 'Tijolo', 'Ferro', 'Madeira'],
+    'Acabamento': ['Piso', 'Revestimento', 'Argamassa', 'Rejunte', 'Tinta', 'Gesso'],
+    'Hidráulica': ['Tubos', 'Conexões', 'Caixa d\'água', 'Louças', 'Metais'],
+    'Elétrica': ['Fios', 'Cabos', 'Eletrodutos', 'Tomadas', 'Interruptores', 'Luminárias']
+  }
+};

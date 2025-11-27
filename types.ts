@@ -69,7 +69,9 @@ export interface Expense {
   id: string;
   workId: string;
   description: string;
-  amount: number;
+  amount: number; // Total Value (Valor Total da Nota/Serviço)
+  paidAmount?: number; // Amount actually paid (Valor Pago)
+  quantity?: number; // Qty (e.g., 2 diárias, 5 sacos)
   date: string;
   category: ExpenseCategory;
   relatedMaterialId?: string; // Link to material

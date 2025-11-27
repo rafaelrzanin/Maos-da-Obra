@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db';
 import { Work, Step, Expense, Material, WorkPhoto, StepStatus, ExpenseCategory, WorkStatus } from '../types';
 import { Recharts } from '../components/RechartsWrapper';
-import { STANDARD_MATERIAL_CATALOG, STANDARD_PHASES } from '../services/standards';
+import { STANDARD_MATERIAL_CATALOG, STANDARD_PHASES, STANDARD_EXPENSE_CATALOG } from '../services/standards';
 
 // --- Componentes Reutilizáveis ---
 
@@ -95,7 +95,9 @@ const OverviewTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
     const expenses = dbService.getExpenses(work.id);
     const catTotals: Record<string, number> = {};
     expenses.forEach(e => {
-        catTotals[e.category] = (catTotals[e.category] || 0) + e.amount;
+        // Use paidAmount for stats, fallback to amount
+        const paid = e.paidAmount ?? e.amount;
+        catTotals[e.category] = (catTotals[e.category] || 0) + paid;
     });
     setData(Object.keys(catTotals).map(key => ({ name: key, value: catTotals[key] })));
   }, [work.id]);
@@ -115,11 +117,11 @@ const OverviewTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
 
         {/* B. Gráfico de Despesas (Pizza) */}
         <div className="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm transition-colors flex flex-col h-full print:border print:border-slate-300">
-            <h3 className="text-lg font-bold text-text-main dark:text-white mb-4">Detalhamento de Gastos</h3>
+            <h3 className="text-lg font-bold text-text-main dark:text-white mb-4">Detalhamento de Gastos (Pago)</h3>
             
             <div className="flex-1 flex flex-col justify-center">
                 <div className="h-48 md:h-56 w-full">
-                    {data.length > 0 ? (
+                    {data.length > 0 && data.some(d => d.value > 0) ? (
                         <Recharts.ResponsiveContainer width="100%" height="100%">
                             <Recharts.PieChart>
                                 <Recharts.Pie
@@ -152,7 +154,7 @@ const OverviewTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
                 </div>
 
                 {/* Legenda Customizada HTML (Evita sobreposição) */}
-                {data.length > 0 && (
+                {data.length > 0 && data.some(d => d.value > 0) && (
                     <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                         {data.map((entry, index) => (
                             <div key={`legend-${index}`} className="flex items-center gap-2">
@@ -524,8 +526,23 @@ const StepsTab: React.FC<{ workId: string, refreshWork: () => void }> = ({ workI
 
 const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workId, onUpdate }) => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [newExp, setNewExp] = useState({ description: '', amount: '', category: ExpenseCategory.MATERIAL, date: '' });
   
+  // State for New Expense
+  const [newExp, setNewExp] = useState({ 
+      description: '', 
+      amount: '', 
+      paidAmount: '', 
+      quantity: '', 
+      category: ExpenseCategory.MATERIAL, 
+      date: '' 
+  });
+  
+  // Custom Catalog State
+  const [isCustom, setIsCustom] = useState(false);
+  const [categorySel, setCategorySel] = useState('');
+  const [subCategorySel, setSubCategorySel] = useState('');
+  const [itemSel, setItemSel] = useState('');
+
   // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Expense>>({});
@@ -541,18 +558,43 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
   const loadExpenses = () => setExpenses(dbService.getExpenses(workId));
   useEffect(loadExpenses, [workId]);
 
+  // Catalog Helpers
+  const expenseCategories = Object.keys(STANDARD_EXPENSE_CATALOG);
+  const expenseSubCategories = categorySel && !isCustom ? Object.keys(STANDARD_EXPENSE_CATALOG[categorySel] || {}) : [];
+  const expenseItems = categorySel && subCategorySel && !isCustom ? STANDARD_EXPENSE_CATALOG[categorySel][subCategorySel] || [] : [];
+
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
+    const finalDescription = isCustom ? newExp.description : `${categorySel} - ${itemSel}`;
+    
     dbService.addExpense({
       workId,
-      description: newExp.description,
+      description: finalDescription,
       amount: Number(newExp.amount),
+      paidAmount: newExp.paidAmount ? Number(newExp.paidAmount) : undefined,
+      quantity: newExp.quantity ? Number(newExp.quantity) : 1,
       category: newExp.category,
       date: newExp.date || new Date().toISOString().split('T')[0]
     });
-    setNewExp({ description: '', amount: '', category: ExpenseCategory.MATERIAL, date: '' });
+    
+    setNewExp({ description: '', amount: '', paidAmount: '', quantity: '', category: ExpenseCategory.MATERIAL, date: '' });
+    // Reset Catalog
+    setCategorySel('');
+    setSubCategorySel('');
+    setItemSel('');
+    
     loadExpenses();
     onUpdate();
+  };
+
+  const autoSelectCategory = (catName: string) => {
+      setCategorySel(catName);
+      setSubCategorySel('');
+      // Auto-map catalog category to System ExpenseCategory
+      if (catName === 'Mão de Obra') setNewExp(prev => ({ ...prev, category: ExpenseCategory.LABOR }));
+      else if (catName === 'Taxas e Projetos') setNewExp(prev => ({ ...prev, category: ExpenseCategory.PERMITS }));
+      else if (catName === 'Equipamentos') setNewExp(prev => ({ ...prev, category: ExpenseCategory.OTHER }));
+      else setNewExp(prev => ({ ...prev, category: ExpenseCategory.MATERIAL }));
   };
 
   const handleDeleteClick = (id: string, e: React.MouseEvent) => {
@@ -594,25 +636,80 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
       });
   };
 
+  const getPaymentStatus = (exp: Expense) => {
+      const paid = exp.paidAmount ?? exp.amount;
+      if (paid >= exp.amount) return { label: 'PAGO', color: 'bg-success-light text-success-dark dark:bg-green-900/50 dark:text-green-200' };
+      if (paid > 0) return { label: 'PARCIAL', color: 'bg-warning-light text-warning-dark dark:bg-yellow-900/50 dark:text-yellow-200' };
+      return { label: 'PENDENTE', color: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300' };
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors print:hidden">
-        <h3 className="font-bold text-text-main dark:text-white mb-5">Adicionar Despesa</h3>
+        <div className="flex justify-between items-center mb-5">
+           <h3 className="font-bold text-text-main dark:text-white">Adicionar Despesa</h3>
+           <button 
+             type="button" 
+             onClick={() => { setIsCustom(!isCustom); setCategorySel(''); setSubCategorySel(''); }}
+             className="text-sm text-primary dark:text-primary-light font-semibold hover:underline"
+           >
+             {isCustom ? "Usar Catálogo" : "Cadastro Manual"}
+           </button>
+        </div>
+
         <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="md:col-span-2">
-            <input 
-                placeholder="Descrição da despesa" 
-                required
-                value={newExp.description}
-                onChange={e => setNewExp({...newExp, description: e.target.value})}
-                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-text-muted dark:placeholder:text-slate-500"
-            />
-          </div>
+          
+          {/* CATALOG SELECTION OR MANUAL INPUT */}
+          {!isCustom ? (
+             <>
+               <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                   <select 
+                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" 
+                      value={categorySel} 
+                      onChange={e => autoSelectCategory(e.target.value)}
+                      required
+                   >
+                     <option value="">Categoria</option>
+                     {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                   </select>
+                   <select 
+                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" 
+                      value={subCategorySel} 
+                      onChange={e => setSubCategorySel(e.target.value)}
+                      disabled={!categorySel}
+                      required
+                   >
+                     <option value="">Subcategoria</option>
+                     {expenseSubCategories.map(s => <option key={s} value={s}>{s}</option>)}
+                   </select>
+                   <select 
+                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" 
+                      value={itemSel} 
+                      onChange={e => setItemSel(e.target.value)}
+                      disabled={!subCategorySel}
+                      required
+                   >
+                     <option value="">Item</option>
+                     {expenseItems.map(i => <option key={i} value={i}>{i}</option>)}
+                   </select>
+               </div>
+             </>
+          ) : (
+            <div className="md:col-span-2">
+              <input 
+                  placeholder="Descrição da despesa" 
+                  required
+                  value={newExp.description}
+                  onChange={e => setNewExp({...newExp, description: e.target.value})}
+                  className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none placeholder:text-text-muted dark:placeholder:text-slate-500"
+              />
+            </div>
+          )}
           
           <select 
             value={newExp.category}
             onChange={e => setNewExp({...newExp, category: e.target.value as ExpenseCategory})}
-            className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+            className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
           >
             {Object.values(ExpenseCategory).map(c => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -621,22 +718,47 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
              type="date"
              value={newExp.date}
              onChange={e => setNewExp({...newExp, date: e.target.value})}
-             className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+             className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
           />
 
-          <div className="md:col-span-2 relative">
-             <span className="absolute left-4 top-3.5 text-text-muted dark:text-slate-500 text-sm">R$</span>
-             <input 
-                type="number" 
-                placeholder="0,00" 
-                required
-                value={newExp.amount}
-                onChange={e => setNewExp({...newExp, amount: e.target.value})}
-                className="w-full pl-10 pr-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-text-muted dark:placeholder:text-slate-500"
-             />
+          {/* Row 2: Values */}
+          <div className="lg:col-span-4 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-100 dark:border-slate-800 pt-4 mt-2">
+               <div>
+                  <label className="block text-xs font-bold text-text-muted dark:text-slate-500 mb-1 uppercase">Quantidade</label>
+                  <input 
+                      type="number" 
+                      placeholder="Ex: 1" 
+                      value={newExp.quantity}
+                      onChange={e => setNewExp({...newExp, quantity: e.target.value})}
+                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
+                  />
+               </div>
+               <div className="relative">
+                 <label className="block text-xs font-bold text-text-muted dark:text-slate-500 mb-1 uppercase">Valor Total (R$)</label>
+                 <span className="absolute left-4 top-9 text-text-muted dark:text-slate-500 text-sm">R$</span>
+                 <input 
+                    type="number" 
+                    placeholder="0,00" 
+                    required
+                    value={newExp.amount}
+                    onChange={e => setNewExp({...newExp, amount: e.target.value})}
+                    className="w-full pl-10 pr-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
+                 />
+               </div>
+               <div className="relative">
+                 <label className="block text-xs font-bold text-text-muted dark:text-slate-500 mb-1 uppercase">Valor Pago (Opcional)</label>
+                 <span className="absolute left-4 top-9 text-text-muted dark:text-slate-500 text-sm">R$</span>
+                 <input 
+                    type="number" 
+                    placeholder="Se vazio = Total" 
+                    value={newExp.paidAmount}
+                    onChange={e => setNewExp({...newExp, paidAmount: e.target.value})}
+                    className="w-full pl-10 pr-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none"
+                 />
+               </div>
           </div>
 
-          <div className="md:col-span-2 text-right">
+          <div className="lg:col-span-4 text-right">
              <button type="submit" className="w-full md:w-auto bg-primary hover:bg-primary-dark text-white px-8 py-3 rounded-xl font-bold transition-all shadow-md shadow-primary/20">
                Adicionar Despesa
              </button>
@@ -646,53 +768,80 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
 
       {/* Lista de Despesas em Grid (Cards) - Layout Atualizado */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 print:grid-cols-2 print:gap-4">
-        {expenses.map(exp => (
-          <div key={exp.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all print:border-slate-300 print:break-inside-avoid">
-             
-             {/* Ações (Topo Direito) */}
-             <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
-                <button 
-                    onClick={(e) => handleEditClick(exp, e)}
-                    className="text-slate-300 dark:text-slate-600 hover:text-primary dark:hover:text-primary-light"
-                    title="Editar"
-                >
-                    <i className="fa-solid fa-pen-to-square"></i>
-                </button>
-                <button 
-                    onClick={(e) => handleDeleteClick(exp.id, e)}
-                    className="text-slate-300 dark:text-slate-600 hover:text-danger"
-                    title="Excluir"
-                >
-                    <i className="fa-solid fa-trash"></i>
-                </button>
-             </div>
+        {expenses.map(exp => {
+            const status = getPaymentStatus(exp);
+            const paidVal = exp.paidAmount ?? exp.amount;
+            const progress = Math.min((paidVal / exp.amount) * 100, 100);
 
-             {/* Cabeçalho */}
-             <div className="mb-3 pr-16">
-                 <h4 className="font-bold text-text-main dark:text-white text-sm truncate" title={exp.description}>
-                     {exp.description}
-                 </h4>
-                 <p className="text-xs text-text-muted dark:text-slate-500 mt-0.5">
-                    {new Date(exp.date).toLocaleDateString('pt-BR')}
-                 </p>
-             </div>
+            return (
+                <div key={exp.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all print:border-slate-300 print:break-inside-avoid">
+                    
+                    {/* Ações (Topo Direito) */}
+                    <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
+                        <button 
+                            onClick={(e) => handleEditClick(exp, e)}
+                            className="text-slate-300 dark:text-slate-600 hover:text-primary dark:hover:text-primary-light"
+                            title="Editar"
+                        >
+                            <i className="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button 
+                            onClick={(e) => handleDeleteClick(exp.id, e)}
+                            className="text-slate-300 dark:text-slate-600 hover:text-danger"
+                            title="Excluir"
+                        >
+                            <i className="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
 
-             {/* Categoria Badge */}
-             <div className="mb-4">
-                 <span className="bg-surface dark:bg-slate-800 text-text-body dark:text-slate-300 px-2.5 py-1 rounded-md text-xs font-medium border border-slate-200 dark:border-slate-700">
-                     {exp.category}
-                 </span>
-             </div>
+                    {/* Cabeçalho */}
+                    <div className="mb-3 pr-16">
+                        <h4 className="font-bold text-text-main dark:text-white text-sm truncate" title={exp.description}>
+                            {exp.description}
+                        </h4>
+                        <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs text-text-muted dark:text-slate-500">
+                                {new Date(exp.date).toLocaleDateString('pt-BR')}
+                            </span>
+                            {exp.quantity && exp.quantity > 1 && (
+                                <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-text-muted dark:text-slate-400">
+                                    x{exp.quantity}
+                                </span>
+                            )}
+                        </div>
+                    </div>
 
-             {/* Rodapé do Card (Valor) */}
-             <div className="flex justify-between items-center text-xs text-text-muted dark:text-slate-500 pt-3 border-t border-slate-50 dark:border-slate-800">
-                <span>Valor Gasto</span>
-                <span className="font-bold text-text-main dark:text-white text-base">
-                    R$ {exp.amount.toFixed(2)}
-                </span>
-             </div>
-          </div>
-        ))}
+                    {/* Categoria & Status Badge */}
+                    <div className="mb-4 flex gap-2">
+                        <span className="bg-surface dark:bg-slate-800 text-text-body dark:text-slate-300 px-2.5 py-1 rounded-md text-[10px] font-medium border border-slate-200 dark:border-slate-700">
+                            {exp.category}
+                        </span>
+                        <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wide ${status.color}`}>
+                            {status.label}
+                        </span>
+                    </div>
+
+                    {/* Rodapé do Card (Valores e Progresso) */}
+                    <div className="pt-3 border-t border-slate-50 dark:border-slate-800">
+                        <div className="flex justify-between items-end mb-1">
+                            <div className="text-xs text-text-muted dark:text-slate-500">
+                                <p>Total: R$ {exp.amount.toFixed(2)}</p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[10px] text-text-muted dark:text-slate-500 uppercase">Pago</p>
+                                <p className={`font-bold text-base ${paidVal >= exp.amount ? 'text-success' : 'text-text-main dark:text-white'}`}>
+                                    R$ {paidVal.toFixed(2)}
+                                </p>
+                            </div>
+                        </div>
+                        {/* Progress Bar */}
+                        <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div className="h-full bg-success transition-all duration-500" style={{ width: `${progress}%` }}></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        })}
 
         {expenses.length === 0 && (
           <div className="col-span-full text-center py-12 text-text-muted dark:text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
@@ -721,7 +870,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                       
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Valor (R$)</label>
+                            <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Valor Total (R$)</label>
                             <input 
                                 type="number"
                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
@@ -731,6 +880,29 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                             />
                         </div>
                         <div>
+                            <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Valor Pago (R$)</label>
+                            <input 
+                                type="number"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
+                                value={editData.paidAmount !== undefined ? editData.paidAmount : editData.amount}
+                                onChange={e => setEditData({...editData, paidAmount: Number(e.target.value)})}
+                                required
+                            />
+                        </div>
+                      </div>
+
+                       {/* Remaining Calculation Visual Aid */}
+                       {editData.amount !== undefined && (editData.paidAmount !== undefined ? editData.paidAmount : editData.amount) < editData.amount && (
+                           <div className="p-3 bg-warning-light/30 border border-warning/30 rounded-lg text-center">
+                               <p className="text-xs text-text-muted dark:text-slate-400 uppercase font-bold">Restante a Pagar</p>
+                               <p className="text-lg font-bold text-warning-dark dark:text-yellow-400">
+                                   R$ {(editData.amount - (editData.paidAmount || 0)).toFixed(2)}
+                               </p>
+                           </div>
+                       )}
+
+                      <div className="grid grid-cols-2 gap-4">
+                         <div>
                             <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Data</label>
                             <input 
                                 type="date"
@@ -738,6 +910,15 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                                 value={editData.date || ''}
                                 onChange={e => setEditData({...editData, date: e.target.value})}
                                 required
+                            />
+                        </div>
+                         <div>
+                            <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Quantidade</label>
+                            <input 
+                                type="number"
+                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
+                                value={editData.quantity || 1}
+                                onChange={e => setEditData({...editData, quantity: Number(e.target.value)})}
                             />
                         </div>
                       </div>
@@ -888,6 +1069,7 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
                         workId,
                         description: `Compra: ${editData.name}`,
                         amount: costValue,
+                        paidAmount: costValue, // Assuming material purchase is paid immediately
                         category: ExpenseCategory.MATERIAL,
                         date: new Date().toISOString().split('T')[0],
                         relatedMaterialId: editingId // Vínculo com material

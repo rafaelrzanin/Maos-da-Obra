@@ -279,7 +279,12 @@ export const dbService = {
 
   addExpense: (expense: Omit<Expense, 'id'>) => {
     const db = getDb();
-    db.expenses.push({ ...expense, id: Math.random().toString(36).substr(2, 9) });
+    db.expenses.push({ 
+        ...expense, 
+        id: Math.random().toString(36).substr(2, 9),
+        paidAmount: expense.paidAmount ?? expense.amount, // Defaults to full payment if not specified
+        quantity: expense.quantity ?? 1
+    });
     saveDb(db);
   },
 
@@ -357,7 +362,6 @@ export const dbService = {
 
   addNotification: (notification: Omit<Notification, 'id'>) => {
       const db = getDb();
-      // Avoid dupes for same day/type if needed, simpler for MVP to just add
       db.notifications.push({ ...notification, id: Math.random().toString(36).substr(2, 9) });
       saveDb(db);
   },
@@ -371,17 +375,31 @@ export const dbService = {
       }
   },
   
+  markAllNotificationsRead: (userId: string) => {
+      const db = getDb();
+      db.notifications.forEach(n => {
+          if (n.userId === userId) n.read = true;
+      });
+      saveDb(db);
+  },
+
+  clearNotifications: (userId: string) => {
+      const db = getDb();
+      db.notifications = db.notifications.filter(n => n.userId !== userId);
+      saveDb(db);
+  },
+  
   // --- Analytics Helper ---
   calculateWorkStats: (workId: string) => {
     const db = getDb();
     const expenses = db.expenses.filter(e => e.workId === workId);
     const steps = db.steps.filter(s => s.workId === workId);
     
-    const totalSpent = expenses.reduce((acc, curr) => acc + curr.amount, 0);
+    // SUM PAID AMOUNTS (Real Cash Flow), if paidAmount is undefined, use amount (legacy support)
+    const totalSpent = expenses.reduce((acc, curr) => acc + (curr.paidAmount ?? curr.amount), 0);
     const totalSteps = steps.length;
     const completedSteps = steps.filter(s => s.status === StepStatus.COMPLETED).length;
     
-    // Recalculate delays dynamically
     const now = new Date();
     const delayedSteps = steps.filter(s => (s.status !== StepStatus.COMPLETED) && (new Date(s.endDate) < now)).length;
     
