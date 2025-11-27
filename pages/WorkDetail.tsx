@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db';
@@ -1067,6 +1068,9 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
   // Custom Material
   const [isCustom, setIsCustom] = useState(false);
 
+  // Import Batch State
+  const [importStepId, setImportStepId] = useState('');
+
   // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState({ name: '', planned: 0, purchased: 0, unit: '', cost: '', stepId: '' });
@@ -1105,6 +1109,74 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
     setSelectedStep('');
     loadMaterials();
   };
+
+  // --- BATCH IMPORT LOGIC ---
+  const downloadTemplate = () => {
+    const csvContent = "data:text/csv;charset=utf-8,Nome do Material,Quantidade,Unidade\nCimento CP-II,50,sacos\nAreia Média,5,m3\nTijolo Baiano,1000,un";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "modelo_importacao_materiais.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target?.result as string;
+      const lines = text.split('\n');
+      
+      let importedCount = 0;
+
+      lines.forEach((line, index) => {
+        // Skip header if present (simple check: if line contains "Nome do Material")
+        if (index === 0 && line.toLowerCase().includes('nome')) return;
+        
+        const cleanLine = line.trim();
+        if (!cleanLine) return;
+
+        // Try comma then semicolon
+        let parts = cleanLine.split(',');
+        if (parts.length < 2) parts = cleanLine.split(';');
+
+        if (parts.length >= 2) {
+          const name = parts[0].trim().replace(/^"|"$/g, '');
+          const qty = Number(parts[1].trim());
+          const unit = parts[2] ? parts[2].trim().replace(/^"|"$/g, '') : 'un';
+
+          if (name && !isNaN(qty)) {
+            dbService.addMaterial({
+              workId,
+              name,
+              plannedQty: qty,
+              purchasedQty: 0,
+              unit,
+              stepId: importStepId || undefined
+            });
+            importedCount++;
+          }
+        }
+      });
+
+      if (importedCount > 0) {
+        alert(`${importedCount} materiais importados com sucesso!`);
+        loadMaterials();
+        onUpdate();
+      } else {
+        alert("Nenhum material válido encontrado na planilha.");
+      }
+      
+      // Reset input
+      e.target.value = '';
+    };
+    reader.readAsText(file);
+  };
+  // --------------------------
 
   const handleDeleteClick = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1208,6 +1280,52 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
 
   return (
     <div className="space-y-8">
+      {/* Importação em Lote */}
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors print:hidden">
+          <h3 className="font-bold text-text-main dark:text-white mb-4 flex items-center gap-2">
+              <i className="fa-solid fa-file-import text-secondary"></i> Importação em Lote (Planilha)
+          </h3>
+          <div className="flex flex-col md:flex-row gap-4 items-end">
+              <div className="flex-1 w-full">
+                  <label className="block text-xs font-bold text-text-muted dark:text-slate-500 mb-1 uppercase">Etapa de Destino (Opcional)</label>
+                  <select 
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white text-sm focus:ring-2 focus:ring-primary outline-none"
+                      value={importStepId}
+                      onChange={(e) => setImportStepId(e.target.value)}
+                  >
+                      <option value="">Sem vínculo (Geral)</option>
+                      {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+              </div>
+              <div className="flex gap-3 w-full md:w-auto">
+                  <button 
+                      onClick={downloadTemplate}
+                      className="flex-1 md:flex-none px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-text-muted font-bold hover:bg-slate-50 dark:hover:bg-slate-800 text-sm transition-colors whitespace-nowrap"
+                  >
+                      <i className="fa-solid fa-download mr-2"></i> Baixar Modelo
+                  </button>
+                  <div className="relative flex-1 md:flex-none">
+                      <input 
+                          type="file" 
+                          accept=".csv" 
+                          className="hidden" 
+                          id="csv-upload"
+                          onChange={handleImport}
+                      />
+                      <label 
+                          htmlFor="csv-upload"
+                          className="cursor-pointer bg-secondary hover:bg-secondary/90 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-secondary/20 transition-all flex items-center justify-center gap-2 whitespace-nowrap h-[38px]"
+                      >
+                          <i className="fa-solid fa-upload"></i> Importar Planilha
+                      </label>
+                  </div>
+              </div>
+          </div>
+          <p className="text-xs text-text-muted dark:text-slate-500 mt-3">
+              * O arquivo deve ser formato .csv com as colunas: Nome, Quantidade, Unidade.
+          </p>
+      </div>
+
       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors print:hidden">
         <div className="flex justify-between items-center mb-5">
            <h3 className="font-bold text-text-main dark:text-white">Adicionar Material</h3>
