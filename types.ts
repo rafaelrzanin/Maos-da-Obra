@@ -75,6 +75,7 @@ export interface Expense {
   date: string;
   category: ExpenseCategory;
   relatedMaterialId?: string; // Link to material
+  stepId?: string; // Link to specific step (New)
 }
 
 export enum MaterialStatus {

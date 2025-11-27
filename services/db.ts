@@ -1,4 +1,5 @@
 
+
 import { 
   User, Work, Step, Expense, Material, WorkPhoto, 
   PlanType, WorkStatus, StepStatus, Notification
@@ -282,8 +283,9 @@ export const dbService = {
     db.expenses.push({ 
         ...expense, 
         id: Math.random().toString(36).substr(2, 9),
-        paidAmount: expense.paidAmount ?? 0, // Changed from expense.amount to 0. Default is UNPAID.
-        quantity: expense.quantity ?? 1
+        paidAmount: expense.paidAmount ?? 0, 
+        quantity: expense.quantity ?? 1,
+        stepId: expense.stepId
     });
     saveDb(db);
   },

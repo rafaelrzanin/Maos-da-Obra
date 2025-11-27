@@ -579,9 +579,13 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
       paidAmount: '', 
       quantity: '', 
       category: ExpenseCategory.MATERIAL, 
-      date: '' 
+      date: '',
+      stepId: '' // NEW: Selected Step
   });
   
+  // Steps for linking
+  const [steps, setSteps] = useState<Step[]>([]);
+
   // Custom Catalog State
   const [isCustom, setIsCustom] = useState(false);
   const [categorySel, setCategorySel] = useState('');
@@ -601,7 +605,11 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
   const loadExpenses = () => setExpenses(dbService.getExpenses(workId));
-  useEffect(loadExpenses, [workId]);
+  
+  useEffect(() => {
+    loadExpenses();
+    setSteps(dbService.getSteps(workId));
+  }, [workId]);
 
   // Catalog Helpers
   const expenseCategories = Object.keys(STANDARD_EXPENSE_CATALOG);
@@ -616,14 +624,14 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
       workId,
       description: finalDescription,
       amount: Number(newExp.amount),
-      // CHANGE: Default paidAmount to 0 if empty/undefined. User must explicitly set it if paid.
       paidAmount: newExp.paidAmount ? Number(newExp.paidAmount) : 0, 
       quantity: newExp.quantity ? Number(newExp.quantity) : 1,
       category: newExp.category,
-      date: newExp.date || new Date().toISOString().split('T')[0]
+      date: newExp.date || new Date().toISOString().split('T')[0],
+      stepId: newExp.stepId || undefined
     });
     
-    setNewExp({ description: '', amount: '', paidAmount: '', quantity: '', category: ExpenseCategory.MATERIAL, date: '' });
+    setNewExp({ description: '', amount: '', paidAmount: '', quantity: '', category: ExpenseCategory.MATERIAL, date: '', stepId: '' });
     // Reset Catalog
     setCategorySel('');
     setSubCategorySel('');
@@ -661,7 +669,6 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
   const handleEditClick = (exp: Expense, e: React.MouseEvent) => {
       e.stopPropagation();
       setEditingId(exp.id);
-      // Ensure paidAmount is properly set to 0 if undefined during edit
       setEditData({ ...exp, paidAmount: exp.paidAmount ?? 0 });
   };
 
@@ -684,7 +691,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
   };
 
   const getPaymentStatus = (exp: Expense) => {
-      const paid = exp.paidAmount ?? 0; // Default to 0 for status check
+      const paid = exp.paidAmount ?? 0;
       if (paid >= exp.amount) return { label: 'PAGO', color: 'bg-success-light text-success-dark dark:bg-green-900/50 dark:text-green-200' };
       if (paid > 0) return { label: 'PARCIAL', color: 'bg-warning-light text-warning-dark dark:bg-yellow-900/50 dark:text-yellow-200' };
       return { label: 'PENDENTE', color: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300' };
@@ -804,6 +811,18 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                  />
                </div>
           </div>
+          
+          <div className="md:col-span-4 border-t border-slate-100 dark:border-slate-800 pt-4 mt-2">
+              <label className="block text-xs font-bold text-text-muted dark:text-slate-500 mb-1 uppercase">Vincular a Etapa (Opcional)</label>
+              <select 
+                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none" 
+                value={newExp.stepId} 
+                onChange={e => setNewExp({...newExp, stepId: e.target.value})}
+              >
+                <option value="">Geral / Obra Toda</option>
+                {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+          </div>
 
           <div className="lg:col-span-4 text-right">
              <button type="submit" className="w-full md:w-auto bg-primary hover:bg-primary-dark text-white px-8 py-3 rounded-xl font-bold transition-all shadow-md shadow-primary/20">
@@ -819,6 +838,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
             const status = getPaymentStatus(exp);
             const paidVal = exp.paidAmount ?? 0;
             const progress = Math.min((paidVal / exp.amount) * 100, 100);
+            const stepName = steps.find(s => s.id === exp.stepId)?.name;
 
             return (
                 <div key={exp.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all print:border-slate-300 print:break-inside-avoid">
@@ -846,17 +866,26 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                         <h4 className="font-bold text-text-main dark:text-white text-sm truncate" title={exp.description}>
                             {exp.description}
                         </h4>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex flex-col gap-1 mt-0.5">
                             <span className="text-xs text-text-muted dark:text-slate-500">
                                 {new Date(exp.date).toLocaleDateString('pt-BR')}
                             </span>
                             {exp.quantity && exp.quantity > 1 && (
-                                <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-text-muted dark:text-slate-400">
+                                <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-text-muted dark:text-slate-400 w-fit">
                                     x{exp.quantity}
                                 </span>
                             )}
                         </div>
                     </div>
+                    
+                    {/* Etapa Vinculada */}
+                    {stepName && (
+                        <div className="mb-2">
+                             <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-text-muted dark:text-slate-400 px-2 py-0.5 rounded flex items-center gap-1 w-fit max-w-full truncate">
+                                 <i className="fa-solid fa-link text-[8px]"></i> {stepName}
+                             </span>
+                        </div>
+                    )}
 
                     {/* Categoria & Status Badge */}
                     <div className="mb-4 flex gap-2">
@@ -978,6 +1007,18 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
                             className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
                           >
                             {Object.values(ExpenseCategory).map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                      </div>
+                      
+                      <div>
+                          <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Vincular a Etapa</label>
+                          <select 
+                            className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none" 
+                            value={editData.stepId || ''} 
+                            onChange={e => setEditData({...editData, stepId: e.target.value})}
+                          >
+                            <option value="">Geral / Obra Toda</option>
+                            {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                           </select>
                       </div>
 
@@ -1131,7 +1172,8 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
                         paidAmount: costValue, // Assuming material purchase is paid immediately
                         category: ExpenseCategory.MATERIAL,
                         date: new Date().toISOString().split('T')[0],
-                        relatedMaterialId: editingId // Vínculo com material
+                        relatedMaterialId: editingId, // Vínculo com material
+                        stepId: editData.stepId || undefined // Vinculo com etapa vindo do material
                     });
                 }
             }
@@ -1150,8 +1192,24 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
     return { label: 'PARCIAL', color: 'bg-warning-light text-warning-dark dark:bg-yellow-900/50 dark:text-yellow-200' };
   }
 
+  // GROUP MATERIALS BY STEP
+  const groupedMaterials = materials.reduce((acc, mat) => {
+      const step = steps.find(s => s.id === mat.stepId);
+      const groupName = step ? step.name : 'Geral / Sem Etapa Vinculada';
+      if (!acc[groupName]) acc[groupName] = [];
+      acc[groupName].push(mat);
+      return acc;
+  }, {} as Record<string, Material[]>);
+
+  // Custom sort: Put 'Geral' last, sort others alphabetically or by step order if possible
+  const sortedGroupKeys = Object.keys(groupedMaterials).sort((a, b) => {
+      if (a === 'Geral / Sem Etapa Vinculada') return 1;
+      if (b === 'Geral / Sem Etapa Vinculada') return -1;
+      return a.localeCompare(b);
+  });
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors print:hidden">
         <div className="flex justify-between items-center mb-5">
            <h3 className="font-bold text-text-main dark:text-white">Adicionar Material</h3>
@@ -1248,69 +1306,74 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
         </form>
       </div>
 
-      {/* Lista de Materiais */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 print:grid-cols-2 print:gap-4">
-        {materials.map(mat => {
-           const status = getStatus(mat);
-           const stepName = steps.find(s => s.id === mat.stepId)?.name;
+      {/* Lista de Materiais Agrupada por Etapas */}
+      <div className="space-y-10">
+          {sortedGroupKeys.map(groupName => (
+              <div key={groupName} className="relative">
+                   <div className="flex items-center gap-4 mb-4">
+                        <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
+                        <h4 className="text-lg font-bold text-primary dark:text-white px-4 py-1 bg-surface dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700">
+                           {groupName}
+                        </h4>
+                        <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
+                   </div>
+                   
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 print:grid-cols-2 print:gap-4">
+                       {groupedMaterials[groupName].map(mat => {
+                           const status = getStatus(mat);
+                           return (
+                               <div key={mat.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all print:border-slate-300 print:break-inside-avoid">
+                                    {/* Ações */}
+                                    <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
+                                        <button 
+                                            onClick={(e) => handleEditClick(mat, e)}
+                                            className="text-slate-300 dark:text-slate-600 hover:text-primary dark:hover:text-primary-light"
+                                            title="Editar / Lançar Compra"
+                                        >
+                                            <i className="fa-solid fa-pen-to-square"></i>
+                                        </button>
+                                        <button 
+                                            onClick={(e) => handleDeleteClick(mat.id, e)}
+                                            className="text-slate-300 dark:text-slate-600 hover:text-danger"
+                                            title="Excluir"
+                                        >
+                                            <i className="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
 
-           return (
-             <div key={mat.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all print:border-slate-300 print:break-inside-avoid">
-                {/* Ações */}
-                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
-                    <button 
-                        onClick={(e) => handleEditClick(mat, e)}
-                        className="text-slate-300 dark:text-slate-600 hover:text-primary dark:hover:text-primary-light"
-                        title="Editar / Lançar Compra"
-                    >
-                        <i className="fa-solid fa-pen-to-square"></i>
-                    </button>
-                    <button 
-                        onClick={(e) => handleDeleteClick(mat.id, e)}
-                        className="text-slate-300 dark:text-slate-600 hover:text-danger"
-                        title="Excluir"
-                    >
-                        <i className="fa-solid fa-trash"></i>
-                    </button>
-                </div>
+                                    <div className="flex justify-between items-start mb-2">
+                                    <h4 className="font-bold text-text-main dark:text-white text-sm pr-16 truncate w-full" title={mat.name}>{mat.name}</h4>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between mb-4">
+                                    <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide ${status.color}`}>
+                                        {status.label}
+                                    </span>
+                                    </div>
+                                    
+                                    <div className="flex justify-between text-xs text-text-muted dark:text-slate-500 pt-3 border-t border-slate-50 dark:border-slate-800">
+                                    <div>
+                                        <p>Planejado</p>
+                                        <p className="font-bold text-text-body dark:text-slate-300">{mat.plannedQty} {mat.unit}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p>Comprado</p>
+                                        <p className="font-bold text-text-body dark:text-slate-300">{mat.purchasedQty} {mat.unit}</p>
+                                    </div>
+                                    </div>
+                                </div>
+                           )
+                       })}
+                   </div>
+              </div>
+          ))}
 
-                <div className="flex justify-between items-start mb-2">
-                   <h4 className="font-bold text-text-main dark:text-white text-sm pr-16 truncate w-full" title={mat.name}>{mat.name}</h4>
-                </div>
-                
-                {stepName && (
-                   <div className="mb-3">
-                       <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-text-muted dark:text-slate-400 px-2 py-0.5 rounded flex items-center gap-1 w-fit max-w-full truncate">
-                           <i className="fa-solid fa-link text-[8px]"></i> {stepName}
-                       </span>
-                   </div>
-                )}
-                
-                <div className="flex items-center justify-between mb-4">
-                  <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide ${status.color}`}>
-                     {status.label}
-                  </span>
-                </div>
-                
-                <div className="flex justify-between text-xs text-text-muted dark:text-slate-500 pt-3 border-t border-slate-50 dark:border-slate-800">
-                   <div>
-                      <p>Planejado</p>
-                      <p className="font-bold text-text-body dark:text-slate-300">{mat.plannedQty} {mat.unit}</p>
-                   </div>
-                   <div className="text-right">
-                      <p>Comprado</p>
-                      <p className="font-bold text-text-body dark:text-slate-300">{mat.purchasedQty} {mat.unit}</p>
-                   </div>
-                </div>
-             </div>
-           )
-        })}
-        {materials.length === 0 && (
-          <div className="col-span-full text-center py-12 text-text-muted dark:text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
-             <i className="fa-solid fa-box-open text-3xl mb-3 opacity-30"></i>
-             <p>Nenhum material cadastrado.</p>
-          </div>
-        )}
+          {materials.length === 0 && (
+            <div className="col-span-full text-center py-12 text-text-muted dark:text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                <i className="fa-solid fa-box-open text-3xl mb-3 opacity-30"></i>
+                <p>Nenhum material cadastrado.</p>
+            </div>
+          )}
       </div>
 
       {/* Modal de Edição */}
