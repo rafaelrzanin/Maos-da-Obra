@@ -1,7 +1,7 @@
 
 import { 
   User, Work, Step, Expense, Material, WorkPhoto, 
-  PlanType, WorkStatus, StepStatus, RiskLevel, MaterialStatus, Notification
+  PlanType, WorkStatus, StepStatus, Notification
 } from '../types';
 import { STANDARD_PHASES } from './standards';
 

@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { dbService } from '../services/db';
-import { Work, WorkStatus, RiskLevel, Expense, Step } from '../types';
+import { Work, RiskLevel } from '../types';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -211,18 +211,15 @@ const Dashboard: React.FC = () => {
             const missingMats = dbService.getMaterials(work.id).filter(m => m.purchasedQty < m.plannedQty).length;
             
             // Determine risk colors
-            let riskColor = 'text-success';
             let riskBg = 'bg-success-light text-success-dark';
             let progressColor = 'text-success';
             let progressBarColor = 'from-success to-success';
             
             if (risk === RiskLevel.MEDIUM) {
-                riskColor = 'text-warning';
                 riskBg = 'bg-warning-light text-warning-dark';
                 progressColor = 'text-warning';
                 progressBarColor = 'from-warning to-warning';
             } else if (risk === RiskLevel.HIGH) {
-                riskColor = 'text-danger';
                 riskBg = 'bg-danger-light text-danger';
                 progressColor = 'text-danger';
                 progressBarColor = 'from-danger to-danger';

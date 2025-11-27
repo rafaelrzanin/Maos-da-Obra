@@ -2,8 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db';
-import { Work, Step, Expense, Material, WorkPhoto, StepStatus, ExpenseCategory, MaterialStatus, PlanType, RiskLevel, WorkStatus } from '../types';
-import { useAuth, useTheme } from '../App';
+import { Work, Step, Expense, Material, WorkPhoto, StepStatus, ExpenseCategory, WorkStatus } from '../types';
 import { Recharts } from '../components/RechartsWrapper';
 import { STANDARD_MATERIAL_CATALOG, STANDARD_PHASES } from '../services/standards';
 
@@ -132,7 +131,7 @@ const OverviewTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
-                                    {data.map((entry, index) => (
+                                    {data.map((_, index) => (
                                         <Recharts.Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
                                     ))}
                                 </Recharts.Pie>
@@ -218,7 +217,6 @@ const OverviewTab: React.FC<{ work: Work, stats: any }> = ({ work, stats }) => {
 };
 
 const StepsTab: React.FC<{ workId: string, refreshWork: () => void }> = ({ workId, refreshWork }) => {
-  const [steps, setSteps] = useState<Step[]>([]);
   const [phases, setPhases] = useState<Record<string, Step[]>>({});
   const [expandedPhases, setExpandedPhases] = useState<Record<string, boolean>>({});
   const [sortedPhaseNames, setSortedPhaseNames] = useState<string[]>([]);
@@ -232,7 +230,6 @@ const StepsTab: React.FC<{ workId: string, refreshWork: () => void }> = ({ workI
 
   const loadSteps = () => {
     const s = dbService.getSteps(workId);
-    setSteps(s);
     
     // Group by Phase
     const grouped: Record<string, Step[]> = {};
