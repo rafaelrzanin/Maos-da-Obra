@@ -90,6 +90,7 @@ export interface Material {
   plannedQty: number;
   purchasedQty: number;
   unit: string;
+  stepId?: string; // Optional link to a specific step
 }
 
 export interface WorkPhoto {

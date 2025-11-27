@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db';
@@ -1020,12 +1021,16 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
   const [qty, setQty] = useState('');
   const [unit, setUnit] = useState('un');
   
+  // Steps for linking
+  const [steps, setSteps] = useState<Step[]>([]);
+  const [selectedStep, setSelectedStep] = useState('');
+  
   // Custom Material
   const [isCustom, setIsCustom] = useState(false);
 
   // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState({ name: '', planned: 0, purchased: 0, unit: '', cost: '' });
+  const [editData, setEditData] = useState({ name: '', planned: 0, purchased: 0, unit: '', cost: '', stepId: '' });
 
   // Confirmation Modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -1036,7 +1041,11 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
   const loadMaterials = () => setMaterials(dbService.getMaterials(workId));
-  useEffect(loadMaterials, [workId]);
+  
+  useEffect(() => {
+     loadMaterials();
+     setSteps(dbService.getSteps(workId));
+  }, [workId]);
 
   const categories = Object.keys(STANDARD_MATERIAL_CATALOG);
   const subCategories = category && !isCustom ? Object.keys(STANDARD_MATERIAL_CATALOG[category] || {}) : [];
@@ -1049,10 +1058,12 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
       name: isCustom ? materialName : `${category} - ${materialName}`,
       plannedQty: Number(qty),
       purchasedQty: 0, // Inicia com 0 comprado
-      unit
+      unit,
+      stepId: selectedStep || undefined
     });
     setMaterialName('');
     setQty('');
+    setSelectedStep('');
     loadMaterials();
   };
 
@@ -1078,7 +1089,8 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
           planned: mat.plannedQty, 
           purchased: mat.purchasedQty, 
           unit: mat.unit, 
-          cost: '' // Reseta o custo para cada edição
+          cost: '',
+          stepId: mat.stepId || ''
       });
   }
 
@@ -1101,7 +1113,8 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
                 name: editData.name,
                 plannedQty: Number(editData.planned),
                 purchasedQty: purchasedQty,
-                unit: editData.unit
+                unit: editData.unit,
+                stepId: editData.stepId || undefined
             });
 
             // 2. Se a quantidade comprada for zero, remove despesas associadas
@@ -1215,6 +1228,18 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
             />
           </div>
 
+          <div className="md:col-span-2 lg:col-span-4">
+              <label className="block text-xs font-bold text-text-muted dark:text-slate-500 mb-1 uppercase">Vincular a Etapa (Opcional)</label>
+              <select 
+                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none" 
+                value={selectedStep} 
+                onChange={e => setSelectedStep(e.target.value)}
+              >
+                <option value="">Sem vínculo</option>
+                {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+          </div>
+
           <div className="md:col-span-4 text-right">
              <button type="submit" className="bg-primary hover:bg-primary-dark text-white px-8 py-3 rounded-xl font-bold transition-all shadow-md shadow-primary/20">
                Adicionar à Lista
@@ -1227,6 +1252,8 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 print:grid-cols-2 print:gap-4">
         {materials.map(mat => {
            const status = getStatus(mat);
+           const stepName = steps.find(s => s.id === mat.stepId)?.name;
+
            return (
              <div key={mat.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-md transition-all print:border-slate-300 print:break-inside-avoid">
                 {/* Ações */}
@@ -1247,9 +1274,17 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
                     </button>
                 </div>
 
-                <div className="flex justify-between items-start mb-3">
+                <div className="flex justify-between items-start mb-2">
                    <h4 className="font-bold text-text-main dark:text-white text-sm pr-16 truncate w-full" title={mat.name}>{mat.name}</h4>
                 </div>
+                
+                {stepName && (
+                   <div className="mb-3">
+                       <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-text-muted dark:text-slate-400 px-2 py-0.5 rounded flex items-center gap-1 w-fit max-w-full truncate">
+                           <i className="fa-solid fa-link text-[8px]"></i> {stepName}
+                       </span>
+                   </div>
+                )}
                 
                 <div className="flex items-center justify-between mb-4">
                   <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide ${status.color}`}>
@@ -1317,6 +1352,18 @@ const MaterialsTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ work
                                  required
                               />
                           </div>
+                      </div>
+
+                      <div>
+                          <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Etapa Vinculada</label>
+                          <select 
+                            className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none" 
+                            value={editData.stepId} 
+                            onChange={e => setEditData({...editData, stepId: e.target.value})}
+                          >
+                            <option value="">Sem vínculo</option>
+                            {steps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
                       </div>
 
                       <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
