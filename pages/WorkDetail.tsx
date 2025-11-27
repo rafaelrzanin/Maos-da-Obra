@@ -527,11 +527,8 @@ const StepsTab: React.FC<{ workId: string, refreshWork: () => void }> = ({ workI
 
 const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workId, onUpdate }) => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [newExp, setNewExp] = useState({ description: '', amount: '', category: ExpenseCategory.OTHER, date: '' });
+  const [newExp, setNewExp] = useState({ description: '', amount: '', category: ExpenseCategory.MATERIAL, date: '' });
   
-  // State for Expandable Form (Inline)
-  const [showAddForm, setShowAddForm] = useState(false);
-
   // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Expense>>({});
@@ -556,8 +553,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
       category: newExp.category,
       date: newExp.date || new Date().toISOString().split('T')[0]
     });
-    setNewExp({ description: '', amount: '', category: ExpenseCategory.OTHER, date: '' });
-    setShowAddForm(false); // Retrai o formulário após salvar
+    setNewExp({ description: '', amount: '', category: ExpenseCategory.MATERIAL, date: '' });
     loadExpenses();
     onUpdate();
   };
@@ -603,85 +599,53 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
 
   return (
     <div className="space-y-6">
-      
-      {/* Botão de Adicionar Despesa Manual */}
-      <div className="flex justify-end print:hidden">
-         <button 
-           onClick={() => setShowAddForm(!showAddForm)}
-           className={`px-6 py-3 rounded-xl font-bold shadow-md transition-all flex items-center gap-2 ${showAddForm ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300' : 'bg-primary hover:bg-primary-dark text-white shadow-primary/20'}`}
-         >
-           {showAddForm ? <><i className="fa-solid fa-xmark"></i> Cancelar</> : <><i className="fa-solid fa-plus"></i> Nova Despesa Manual</>}
-         </button>
-      </div>
-
-      {/* Formulário Inline Expansível */}
-      {showAddForm && (
-          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full p-6 shadow-md border border-slate-200 dark:border-slate-700 animate-in slide-in-from-top-4 duration-200">
-              <h3 className="text-lg font-bold text-text-main dark:text-white mb-4">Cadastrar Despesa</h3>
-              <p className="text-sm text-text-muted dark:text-slate-400 mb-6">
-                  Cadastre itens como locação de equipamentos, mão de obra avulsa, taxas ou outros custos diversos.
-              </p>
-              <form onSubmit={handleAdd} className="space-y-4">
-                  <div>
-                      <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Descrição</label>
-                      <input 
-                          type="text"
-                          placeholder="Ex: Aluguel Betoneira, Caçamba..."
-                          className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
-                          value={newExp.description}
-                          onChange={e => setNewExp({...newExp, description: e.target.value})}
-                          required
-                      />
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Valor (R$)</label>
-                        <input 
-                            type="number"
-                            placeholder="0,00"
-                            className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
-                            value={newExp.amount}
-                            onChange={e => setNewExp({...newExp, amount: e.target.value})}
-                            required
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Data</label>
-                        <input 
-                            type="date"
-                            className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
-                            value={newExp.date}
-                            onChange={e => setNewExp({...newExp, date: e.target.value})}
-                            required
-                        />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-text-muted dark:text-slate-400 mb-1">Categoria</label>
-                      <select 
-                        value={newExp.category}
-                        onChange={e => setNewExp({...newExp, category: e.target.value as ExpenseCategory})}
-                        className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800 text-text-main dark:text-white focus:ring-2 focus:ring-primary outline-none"
-                      >
-                        <option value={ExpenseCategory.OTHER}>Outros / Diversos</option>
-                        <option value={ExpenseCategory.LABOR}>Mão de Obra</option>
-                        <option value={ExpenseCategory.PERMITS}>Taxas / Licenças</option>
-                        <option value={ExpenseCategory.MATERIAL}>Material (Manual)</option>
-                      </select>
-                  </div>
-                  </div>
-
-                  <div className="flex justify-end pt-4">
-                      <button 
-                        type="submit" 
-                        className="w-full md:w-auto px-8 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20"
-                      >
-                          Adicionar Despesa
-                      </button>
-                  </div>
-              </form>
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors print:hidden">
+        <h3 className="font-bold text-text-main dark:text-white mb-5">Adicionar Despesa</h3>
+        <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="md:col-span-2">
+            <input 
+                placeholder="Descrição da despesa" 
+                required
+                value={newExp.description}
+                onChange={e => setNewExp({...newExp, description: e.target.value})}
+                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-text-muted dark:placeholder:text-slate-500"
+            />
           </div>
-      )}
+          
+          <select 
+            value={newExp.category}
+            onChange={e => setNewExp({...newExp, category: e.target.value as ExpenseCategory})}
+            className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+          >
+            {Object.values(ExpenseCategory).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          <input 
+             type="date"
+             value={newExp.date}
+             onChange={e => setNewExp({...newExp, date: e.target.value})}
+             className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+          />
+
+          <div className="md:col-span-2 relative">
+             <span className="absolute left-4 top-3.5 text-text-muted dark:text-slate-500 text-sm">R$</span>
+             <input 
+                type="number" 
+                placeholder="0,00" 
+                required
+                value={newExp.amount}
+                onChange={e => setNewExp({...newExp, amount: e.target.value})}
+                className="w-full pl-10 pr-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-text-main dark:text-white rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-text-muted dark:placeholder:text-slate-500"
+             />
+          </div>
+
+          <div className="md:col-span-2 text-right">
+             <button type="submit" className="w-full md:w-auto bg-primary hover:bg-primary-dark text-white px-8 py-3 rounded-xl font-bold transition-all shadow-md shadow-primary/20">
+               Adicionar Despesa
+             </button>
+          </div>
+        </form>
+      </div>
 
       {/* Lista de Despesas em Grid (Cards) - Layout Atualizado */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 print:grid-cols-2 print:gap-4">
@@ -741,7 +705,7 @@ const ExpensesTab: React.FC<{ workId: string, onUpdate: () => void }> = ({ workI
         )}
       </div>
 
-      {/* Modal de Edição de Despesa (Mantido como Modal pois é edição pontual) */}
+      {/* Modal de Edição de Despesa */}
       {editingId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:hidden">
               <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md p-6 shadow-2xl border border-slate-200 dark:border-slate-700">
